@@ -378,9 +378,9 @@ export default function AdminPage() {
         <p className="text-muted-foreground">회사, 공장, 생산라인, 설비, 레이아웃을 관리합니다.</p>
       </div>
 
-      <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden">
+      <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden min-h-0">
         {/* Companies Column */}
-        <Card className="flex flex-col overflow-hidden">
+        <Card className="flex flex-col overflow-hidden min-h-0">
           <CardHeader className="flex-shrink-0 py-3 px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -393,7 +393,7 @@ export default function AdminPage() {
             </div>
             <CardDescription className="text-xs">{companies.length}개</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-0">
+          <CardContent className="flex-1 overflow-auto p-0 min-h-0">
             <Table>
               <TableBody>
                 {companies.map((company) => (
@@ -447,7 +447,7 @@ export default function AdminPage() {
         </Card>
 
         {/* Factories Column */}
-        <Card className="flex flex-col overflow-hidden">
+        <Card className="flex flex-col overflow-hidden min-h-0">
           <CardHeader className="flex-shrink-0 py-3 px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -468,7 +468,7 @@ export default function AdminPage() {
               {selectedCompany ? `${factories.length}개` : '회사 선택'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-0">
+          <CardContent className="flex-1 overflow-auto p-0 min-h-0">
             {selectedCompanyId ? (
               <>
                 <Table>
@@ -593,7 +593,7 @@ export default function AdminPage() {
         </Card>
 
         {/* Lines Column */}
-        <Card className="flex flex-col overflow-hidden">
+        <Card className="flex flex-col overflow-hidden min-h-0">
           <CardHeader className="flex-shrink-0 py-3 px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -614,7 +614,7 @@ export default function AdminPage() {
               {selectedFactory ? `${lines.length}개` : '공장 선택'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-0">
+          <CardContent className="flex-1 overflow-auto p-0 min-h-0">
             {selectedFactoryId ? (
               <Table>
                 <TableBody>
@@ -677,7 +677,7 @@ export default function AdminPage() {
         </Card>
 
         {/* Equipment Column */}
-        <Card className="flex flex-col overflow-hidden">
+        <Card className="flex flex-col overflow-hidden min-h-0">
           <CardHeader className="flex-shrink-0 py-3 px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -698,7 +698,7 @@ export default function AdminPage() {
               {selectedLine ? `${equipment.length}개` : '라인 선택'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-0">
+          <CardContent className="flex-1 overflow-auto p-0 min-h-0">
             {selectedLineId ? (
               <div className="divide-y">
                 {(() => {
