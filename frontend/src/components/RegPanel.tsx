@@ -194,19 +194,21 @@ export default function RegPanel({ equipment: eq, onSave, onClose, lineName, onU
     // 비동기 저장 시작 (UI 비차단)
     setSaving(true)
     const saveAsync = async () => {
-      if (needNewType) {
-        await ensureEquipmentType(typeToCreate)
+      try {
+        if (needNewType) {
+          await ensureEquipmentType(typeToCreate)
+        }
+        const { equipment_id, ...body } = saveData
+        await onSave(equipment_id, body)
+      } finally {
+        setSaving(false)
       }
-      const { equipment_id, ...body } = saveData
-      await onSave(equipment_id, body)
     }
 
     toast.promise(saveAsync(), {
       loading: '설비 저장 중...',
       success: '설비 저장 완료',
       error: '설비 저장 실패',
-    }).finally(() => {
-      setSaving(false)
     })
   }
 

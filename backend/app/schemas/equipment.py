@@ -34,6 +34,18 @@ class EquipmentUpdate(BaseModel):
     size_h:         Optional[float] = None
 
 
+class EquipmentBatchUpdate(BaseModel):
+    """배치 업데이트용 설비 데이터."""
+    equipment_id: str
+    centroid_x: Optional[float] = None
+    centroid_y: Optional[float] = None
+    centroid_z: Optional[float] = None
+    size_w: Optional[float] = None
+    size_h: Optional[float] = None
+    size_d: Optional[float] = None
+    verified: Optional[bool] = None
+
+
 class SplitRequest(BaseModel):
     plane_point: List[float]
     plane_normal: List[float]

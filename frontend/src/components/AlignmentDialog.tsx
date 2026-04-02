@@ -22,6 +22,8 @@ import { Grid3X3, MoveHorizontal, MoveVertical } from 'lucide-react'
 export type AlignmentOption =
   | 'horizontal-distribute'  // 가로 균등 배치
   | 'vertical-distribute'    // 세로 균등 배치
+  | 'horizontal-distribute-reverse'  // 가로 균등 배치 (역순)
+  | 'vertical-distribute-reverse'    // 세로 균등 배치 (역순)
   | 'horizontal-align-top'   // 상단 정렬
   | 'horizontal-align-center' // 가운데 정렬 (가로)
   | 'horizontal-align-bottom' // 하단 정렬
@@ -331,9 +333,19 @@ export function calculateAlignedPositions(
   const sorted = [...equipment]
 
   switch (option) {
-    case 'horizontal-distribute': {
+    case 'horizontal-distribute':
+    case 'horizontal-distribute-reverse': {
       // X축 기준으로 정렬 후 균등 배치 (bounds 영역 내에서)
-      sorted.sort((a, b) => a.centroid_x - b.centroid_x)
+      // reverse: equipment_id 역순 (큰 번호가 왼쪽으로)
+      if (option === 'horizontal-distribute-reverse') {
+        sorted.sort((a, b) => {
+          const aNum = parseInt(a.equipment_id.match(/\d+$/)?.[0] || '0')
+          const bNum = parseInt(b.equipment_id.match(/\d+$/)?.[0] || '0')
+          return bNum - aNum  // 역순
+        })
+      } else {
+        sorted.sort((a, b) => a.centroid_x - b.centroid_x)
+      }
 
       if (sorted.length < 2) {
         for (const eq of sorted) {
@@ -361,9 +373,18 @@ export function calculateAlignedPositions(
           }
         }
       } else {
-        // 자동 균등 배치: 중심점 간 균등 간격 (설비 크기와 무관하게 중심 기준)
-        const firstX = sorted[0].centroid_x
-        const lastX = sorted[sorted.length - 1].centroid_x
+        // 자동 균등 배치: 중심점 간 균등 간격
+        // 역순일 경우 bounds 기준, 일반일 경우 현재 위치 기준
+        let firstX: number, lastX: number
+        if (option === 'horizontal-distribute-reverse') {
+          // 역순: bounds 영역의 왼쪽/오른쪽 끝 사용
+          const avgHalfW = sorted.reduce((sum, eq) => sum + eq.size_w, 0) / sorted.length / 2
+          firstX = bounds.x + avgHalfW
+          lastX = bounds.x + bounds.width - avgHalfW
+        } else {
+          firstX = sorted[0].centroid_x
+          lastX = sorted[sorted.length - 1].centroid_x
+        }
         const totalCenterSpan = lastX - firstX
         const centerSpacing = totalCenterSpan / (sorted.length - 1)
 
@@ -378,9 +399,19 @@ export function calculateAlignedPositions(
       break
     }
 
-    case 'vertical-distribute': {
+    case 'vertical-distribute':
+    case 'vertical-distribute-reverse': {
       // Y축(Z) 기준으로 정렬 후 균등 배치 (bounds 영역 내에서)
-      sorted.sort((a, b) => a.centroid_z - b.centroid_z)
+      // reverse: equipment_id 역순 (큰 번호가 위로)
+      if (option === 'vertical-distribute-reverse') {
+        sorted.sort((a, b) => {
+          const aNum = parseInt(a.equipment_id.match(/\d+$/)?.[0] || '0')
+          const bNum = parseInt(b.equipment_id.match(/\d+$/)?.[0] || '0')
+          return bNum - aNum  // 역순
+        })
+      } else {
+        sorted.sort((a, b) => a.centroid_z - b.centroid_z)
+      }
 
       if (sorted.length < 2) {
         for (const eq of sorted) {
@@ -407,9 +438,18 @@ export function calculateAlignedPositions(
           }
         }
       } else {
-        // 자동 균등 배치: 중심점 간 균등 간격 (설비 크기와 무관하게 중심 기준)
-        const firstY = sorted[0].centroid_z
-        const lastY = sorted[sorted.length - 1].centroid_z
+        // 자동 균등 배치: 중심점 간 균등 간격
+        // 역순일 경우 bounds 기준, 일반일 경우 현재 위치 기준
+        let firstY: number, lastY: number
+        if (option === 'vertical-distribute-reverse') {
+          // 역순: bounds 영역의 위/아래 끝 사용
+          const avgHalfD = sorted.reduce((sum, eq) => sum + eq.size_d, 0) / sorted.length / 2
+          firstY = bounds.y + avgHalfD
+          lastY = bounds.y + bounds.height - avgHalfD
+        } else {
+          firstY = sorted[0].centroid_z
+          lastY = sorted[sorted.length - 1].centroid_z
+        }
         const totalCenterSpan = lastY - firstY
         const centerSpacing = totalCenterSpan / (sorted.length - 1)
 

@@ -2,14 +2,16 @@ import { useRef, useState, useEffect, useMemo } from 'react'
 import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber'
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from '@react-three/drei'
 import * as THREE from 'three'
-import { Equipment } from '@/lib/api'
+import { Equipment, EquipmentGroup } from '@/lib/api'
 import PointCloudView from './PointCloudView'
-import SplitPlaneHelper from './SplitPlaneHelper'
-import BoxSelectHelper from './BoxSelectHelper'
-import { useEditingStore } from '@/stores/useEditingStore'
-import { useSplitEquipment } from '@/hooks/useSplitEquipment'
-import { useBoxSelection } from '@/hooks/useBoxSelection'
-import { useEquipmentPoints } from '@/hooks/useEquipmentPoints'
+
+// 그룹 타입별 색상
+const GROUP_COLORS: Record<string, number> = {
+  BRIDGE: 0x00ffff,   // 시안 (존 연결)
+  CLUSTER: 0xff00ff,  // 마젠타 (동일 기능)
+  FLOW: 0xffff00,     // 노랑 (공정 흐름)
+  OTHER: 0xff8800,    // 주황 (기타)
+}
 
 const EQ_HEX: Record<string, number> = {
   SMT_LINE:       0x00FF88,
@@ -113,73 +115,78 @@ function EquipmentBox({ eq, isSelected, isDimmed, onClick }: BoxProps) {
   )
 }
 
-// Box selection wrapper component (must be inside Canvas for R3F context)
-interface BoxSelectWrapperProps {
-  selectedId: string | null
-}
-
-function BoxSelectWrapper({ selectedId }: BoxSelectWrapperProps) {
-  const { activeTool } = useEditingStore()
-  const { positions } = useEquipmentPoints(selectedId ?? '', !!selectedId, 'medium')
-
-  const { handleBoxSelect } = useBoxSelection({
-    equipmentId: selectedId ?? '',
-    positions: positions ?? null,
-  })
-
-  const onBoxSelect = (box: THREE.Box3, isSubtractive: boolean) => {
-    handleBoxSelect(box, isSubtractive)
-  }
-
-  if (activeTool !== 'box_select' || !selectedId) return null
-
-  return <BoxSelectHelper onSelect={onBoxSelect} />
-}
-
-// Split plane wrapper component (must be inside Canvas for R3F context)
-interface SplitPlaneWrapperProps {
+// 그룹 바운딩 박스 컴포넌트
+interface GroupBoxProps {
+  group: EquipmentGroup
   equipment: Equipment[]
-  selectedId: string | null
+  isSelected?: boolean
+  onClick?: () => void
 }
 
-function SplitPlaneWrapper({ equipment, selectedId }: SplitPlaneWrapperProps) {
-  const { activeTool, splitPlane, setSplitPlane, setActiveTool } = useEditingStore()
-  const splitMutation = useSplitEquipment()
+function GroupBoundingBox({ group, equipment, isSelected, onClick }: GroupBoxProps) {
+  const { invalidate } = useThree()
+  const [hovered, setHovered] = useState(false)
 
-  // Find selected equipment bounds
-  const selectedEquipmentBounds = useMemo(() => {
-    if (!selectedId) return null
-    const eq = equipment.find((e) => e.equipment_id === selectedId)
-    if (!eq) return null
+  // 그룹 멤버 설비들의 바운딩 박스 계산
+  const bounds = useMemo(() => {
+    const members = equipment.filter(eq => group.member_ids.includes(eq.equipment_id))
+    if (members.length === 0) return null
+
+    let minX = Infinity, maxX = -Infinity
+    let minY = Infinity, maxY = -Infinity
+    let minZ = Infinity, maxZ = -Infinity
+
+    members.forEach(eq => {
+      minX = Math.min(minX, eq.centroid_x - eq.size_w / 2)
+      maxX = Math.max(maxX, eq.centroid_x + eq.size_w / 2)
+      minY = Math.min(minY, 0)
+      maxY = Math.max(maxY, eq.size_h)
+      minZ = Math.min(minZ, eq.centroid_z - eq.size_d / 2)
+      maxZ = Math.max(maxZ, eq.centroid_z + eq.size_d / 2)
+    })
+
+    // 약간의 패딩 추가
+    const padding = 0.2
     return {
-      center: [eq.centroid_x, eq.size_h / 2, eq.centroid_z] as [number, number, number],
-      size: [eq.size_w, eq.size_h, eq.size_d] as [number, number, number],
+      center: [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2] as [number, number, number],
+      size: [maxX - minX + padding, maxY - minY + padding, maxZ - minZ + padding] as [number, number, number],
     }
-  }, [selectedId, equipment])
+  }, [group.member_ids, equipment])
 
-  const handleSplitConfirm = () => {
-    if (selectedId && splitPlane) {
-      splitMutation.mutate({
-        equipmentId: selectedId,
-        planePoint: splitPlane.point,
-        planeNormal: splitPlane.normal,
-      })
-    }
+  useEffect(() => {
+    invalidate()
+  }, [bounds, invalidate])
+
+  if (!bounds) return null
+
+  const color = GROUP_COLORS[group.group_type] ?? GROUP_COLORS.OTHER
+
+  const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation()
+    onClick?.()
   }
 
-  const handleSplitCancel = () => {
-    setSplitPlane(null)
-    setActiveTool(null)
-  }
-
-  if (activeTool !== 'split' || !selectedEquipmentBounds) return null
+  const opacity = isSelected ? 0.25 : hovered ? 0.2 : 0.15
 
   return (
-    <SplitPlaneHelper
-      equipmentBounds={selectedEquipmentBounds}
-      onConfirm={handleSplitConfirm}
-      onCancel={handleSplitCancel}
-    />
+    <group>
+      {/* 와이어프레임 박스 */}
+      <lineSegments position={bounds.center}>
+        <edgesGeometry args={[new THREE.BoxGeometry(...bounds.size)]} />
+        <lineBasicMaterial color={isSelected ? 0xffffff : color} transparent opacity={0.9} linewidth={2} />
+      </lineSegments>
+
+      {/* 반투명 면 (클릭 가능) */}
+      <mesh
+        position={bounds.center}
+        onClick={handleClick}
+        onPointerEnter={() => { setHovered(true); document.body.style.cursor = 'pointer'; invalidate() }}
+        onPointerLeave={() => { setHovered(false); document.body.style.cursor = 'default'; invalidate() }}
+      >
+        <boxGeometry args={bounds.size} />
+        <meshBasicMaterial color={color} transparent opacity={opacity} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
   )
 }
 
@@ -197,9 +204,21 @@ interface Props {
   viewMode?: 'box' | 'cloud'
   focusLineCode?: string
   focusTarget?: FocusTarget | null
+  groups?: EquipmentGroup[]
+  selectedGroupId?: string | null
+  onSelectGroup?: (group: EquipmentGroup | null) => void
 }
 
-export default function Scene3D({ equipment, selectedId, onSelect, viewMode = 'box', focusLineCode, focusTarget }: Props) {
+export default function Scene3D({ equipment, selectedId, onSelect, viewMode = 'box', focusLineCode, focusTarget, groups = [], selectedGroupId, onSelectGroup }: Props) {
+  // 그룹에 속한 설비 ID들 (그룹 박스로 대체되므로 개별 렌더링 제외)
+  const groupedEquipmentIds = useMemo(() => {
+    const ids = new Set<string>()
+    groups.forEach(group => {
+      group.member_ids.forEach(id => ids.add(id))
+    })
+    return ids
+  }, [groups])
+
   // 포커스 대상이 있으면 해당 위치, 없으면 전체 중심
   const centerX = focusTarget
     ? focusTarget.x
@@ -221,7 +240,7 @@ export default function Scene3D({ equipment, selectedId, onSelect, viewMode = 'b
       onPointerMissed={() => {}}
     >
       {/* Invalidate on prop changes */}
-      <InvalidateOnChange deps={[equipment.length, selectedId, viewMode, focusLineCode]} />
+      <InvalidateOnChange deps={[equipment.length, selectedId, viewMode, focusLineCode, groups.length]} />
 
       {/* 환경광 - 매우 밝게 */}
       <ambientLight intensity={1.5} />
@@ -243,8 +262,11 @@ export default function Scene3D({ equipment, selectedId, onSelect, viewMode = 'b
         infiniteGrid
       />
 
-      {/* 설비 렌더링 (박스 또는 포인트클라우드) */}
+      {/* 설비 렌더링 (박스 또는 포인트클라우드) - 그룹에 속한 설비는 제외 */}
       {equipment.map(eq => {
+        // 그룹에 속한 설비는 개별 렌더링하지 않음 (그룹 박스로 대체)
+        if (groupedEquipmentIds.has(eq.equipment_id)) return null
+
         const isDimmed = focusLineCode ? eq.line_code !== focusLineCode : false
         return viewMode === 'box' ? (
           <EquipmentBox
@@ -265,11 +287,16 @@ export default function Scene3D({ equipment, selectedId, onSelect, viewMode = 'b
         )
       })}
 
-      {/* Split Plane Helper (when split tool is active) */}
-      <SplitPlaneWrapper equipment={equipment} selectedId={selectedId} />
-
-      {/* Box Select Helper (when box_select tool is active) */}
-      <BoxSelectWrapper selectedId={selectedId} />
+      {/* 그룹 바운딩 박스 렌더링 */}
+      {groups.map(group => (
+        <GroupBoundingBox
+          key={group.id}
+          group={group}
+          equipment={equipment}
+          isSelected={group.id === selectedGroupId}
+          onClick={() => onSelectGroup?.(group.id === selectedGroupId ? null : group)}
+        />
+      ))}
 
       {/* 카메라 컨트롤 */}
       <OrbitControls

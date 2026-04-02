@@ -21,6 +21,7 @@ export interface Equipment {
   ply_url: string | null
   verified: boolean
   note: string
+  group_id?: string | null
 }
 
 export interface SiteStats {
@@ -69,9 +70,23 @@ export const fetchEquipment = (siteId: string) =>
 export const fetchFactoryEquipment = (factoryCode: string) =>
   api.get<Equipment[]>(`/equipment/factories/${factoryCode}`).then(r => r.data)
 
-// 설비 업데이트
+// 설비 업데이트 (단일)
 export const updateEquipment = (equipmentId: string, body: EquipmentUpdate) =>
   api.patch<Equipment>(`/equipment/${equipmentId}`, body).then(r => r.data)
+
+// 설비 배치 업데이트 (다중) - 한 번의 API 호출로 여러 설비 업데이트
+export interface EquipmentBatchUpdate {
+  equipment_id: string
+  centroid_x?: number
+  centroid_y?: number
+  centroid_z?: number
+  size_w?: number
+  size_h?: number
+  size_d?: number
+}
+
+export const updateEquipmentBatch = (updates: EquipmentBatchUpdate[]) =>
+  api.patch<Equipment[]>('/equipment/batch', updates).then(r => r.data)
 
 // 통계
 export const fetchStats = (siteId: string) =>
@@ -531,3 +546,64 @@ export const deleteEquipment = (equipmentId: string) =>
 
 export const fetchLineEquipment = (lineCode: string) =>
   api.get<Equipment[]>(`/equipment/lines/${lineCode}`).then(r => r.data)
+
+// =============================================================================
+// EQUIPMENT GROUPS (설비 그룹 - 존 간 연결, 컨베이어 브릿지 등)
+// =============================================================================
+
+export interface EquipmentGroup {
+  id: string
+  line_id: string
+  name: string
+  group_type: string  // BRIDGE, CLUSTER, FLOW 등
+  description: string | null
+  centroid_x: number | null
+  centroid_y: number | null
+  centroid_z: number | null
+  size_w: number | null
+  size_h: number | null
+  size_d: number | null
+  member_count: number
+  member_ids: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface EquipmentGroupCreate {
+  line_id: string  // line code
+  name: string
+  group_type?: string
+  description?: string
+  equipment_ids?: string[]
+}
+
+export interface EquipmentGroupUpdate {
+  name?: string
+  group_type?: string
+  description?: string
+}
+
+// Equipment Group API functions
+export const fetchEquipmentGroups = (lineCode: string) =>
+  api.get<EquipmentGroup[]>(`/equipment-groups/line/${lineCode}`).then(r => r.data)
+
+export const fetchFactoryEquipmentGroups = (factoryCode: string) =>
+  api.get<EquipmentGroup[]>(`/equipment-groups/factory/${factoryCode}`).then(r => r.data)
+
+export const fetchEquipmentGroup = (groupId: string) =>
+  api.get<EquipmentGroup>(`/equipment-groups/${groupId}`).then(r => r.data)
+
+export const createEquipmentGroup = (data: EquipmentGroupCreate) =>
+  api.post<EquipmentGroup>('/equipment-groups/', data).then(r => r.data)
+
+export const updateEquipmentGroup = (groupId: string, data: EquipmentGroupUpdate) =>
+  api.patch<EquipmentGroup>(`/equipment-groups/${groupId}`, data).then(r => r.data)
+
+export const addEquipmentToGroup = (groupId: string, equipmentIds: string[]) =>
+  api.post<EquipmentGroup>(`/equipment-groups/${groupId}/members`, { equipment_ids: equipmentIds }).then(r => r.data)
+
+export const removeEquipmentFromGroup = (groupId: string, equipmentIds: string[]) =>
+  api.delete<EquipmentGroup>(`/equipment-groups/${groupId}/members`, { data: { equipment_ids: equipmentIds } }).then(r => r.data)
+
+export const deleteEquipmentGroup = (groupId: string) =>
+  api.delete(`/equipment-groups/${groupId}`)

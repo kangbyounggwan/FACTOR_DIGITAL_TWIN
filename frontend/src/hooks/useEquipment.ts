@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
-import { fetchEquipment, fetchFactoryEquipment, fetchStats, updateEquipment, Equipment, EquipmentUpdate, SiteStats } from '@/lib/api'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { fetchEquipment, fetchFactoryEquipment, fetchStats, updateEquipment, fetchEquipmentGroups, fetchFactoryEquipmentGroups, Equipment, EquipmentUpdate, SiteStats, EquipmentGroup } from '@/lib/api'
 
 // 로컬 목 데이터 (API 연결 전 개발용)
 const MOCK: Equipment[] = [
@@ -59,50 +60,72 @@ export function useEquipment(siteId: string) {
 }
 
 export function useFactoryEquipment(factoryCode: string) {
-  const [equipment, setEquipment] = useState<Equipment[]>([])
-  const [loading, setLoading] = useState(false)
+  const queryClient = useQueryClient()
   const [selected, setSelected] = useState<Equipment | null>(null)
 
-  const load = useCallback(async () => {
-    if (!factoryCode) {
-      setEquipment([])
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    try {
-      if (USE_MOCK) {
-        setEquipment(MOCK)
-      } else {
-        const eq = await fetchFactoryEquipment(factoryCode)
-        setEquipment(eq)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }, [factoryCode])
-
-  useEffect(() => { load() }, [load])
+  // React Query로 데이터 캐싱 - 동일 factoryCode면 3D/2D 페이지 간 공유
+  const { data: equipment = [], isLoading: loading, refetch } = useQuery({
+    queryKey: ['factory-equipment', factoryCode],
+    queryFn: async () => {
+      if (!factoryCode) return []
+      if (USE_MOCK) return MOCK
+      return fetchFactoryEquipment(factoryCode)
+    },
+    enabled: !!factoryCode,
+    staleTime: 5 * 60 * 1000, // 5분간 캐시 유지
+  })
 
   // Compute stats from equipment
-  const stats: SiteStats | null = equipment.length > 0 ? {
-    total: equipment.length,
-    verified: equipment.filter(e => e.verified).length,
-    pending: equipment.filter(e => !e.verified).length,
-    by_type: {}
-  } : null
+  const stats: SiteStats | null = useMemo(() => {
+    if (equipment.length === 0) return null
+    return {
+      total: equipment.length,
+      verified: equipment.filter(e => e.verified).length,
+      pending: equipment.filter(e => !e.verified).length,
+      by_type: {}
+    }
+  }, [equipment])
 
   const save = useCallback(async (id: string, body: EquipmentUpdate) => {
     if (USE_MOCK) {
-      setEquipment(prev =>
-        prev.map(e => e.equipment_id === id ? { ...e, ...body } : e)
+      // Mock 모드: 캐시 직접 업데이트
+      queryClient.setQueryData(['factory-equipment', factoryCode], (prev: Equipment[] | undefined) =>
+        prev?.map(e => e.equipment_id === id ? { ...e, ...body } : e) ?? []
       )
       return
     }
     await updateEquipment(id, body)
-    await load()
-  }, [load])
+    // 캐시 무효화 후 refetch
+    await queryClient.invalidateQueries({ queryKey: ['factory-equipment', factoryCode] })
+  }, [factoryCode, queryClient])
 
-  return { equipment, stats, loading, selected, setSelected, save, reload: load }
+  const reload = useCallback(() => refetch(), [refetch])
+
+  return { equipment, stats, loading, selected, setSelected, save, reload }
+}
+
+// Equipment Groups hook
+// lineCode가 있으면 라인별, 없으면 factoryCode로 공장 전체 그룹 조회
+// React Query로 캐싱하여 3D/2D 페이지 간 데이터 공유
+export function useEquipmentGroups(lineCode: string | null, factoryCode?: string | null) {
+  const { data: groups = [], isLoading: loading, refetch } = useQuery({
+    queryKey: ['equipment-groups', lineCode, factoryCode],
+    queryFn: async () => {
+      // 라인 코드가 있으면 라인별 조회
+      if (lineCode) {
+        return fetchEquipmentGroups(lineCode)
+      }
+      // 라인 코드가 없고 공장 코드가 있으면 공장 전체 조회
+      if (factoryCode) {
+        return fetchFactoryEquipmentGroups(factoryCode)
+      }
+      return []
+    },
+    enabled: !!(lineCode || factoryCode),
+    staleTime: 5 * 60 * 1000, // 5분간 캐시 유지
+  })
+
+  const reload = useCallback(() => refetch(), [refetch])
+
+  return { groups, loading, reload }
 }

@@ -2,7 +2,6 @@ import { useRef, useMemo, useEffect } from 'react'
 import { useFrame, useThree, ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useEquipmentPoints } from '@/hooks/useEquipmentPoints'
-import { useEditingStore } from '@/stores/useEditingStore'
 import { Equipment } from '@/lib/api'
 
 interface PointCloudViewProps {
@@ -16,14 +15,13 @@ export default function PointCloudView({ equipment, isSelected, isDimmed = false
   const pointsRef = useRef<THREE.Points>(null!)
   const materialRef = useRef<THREE.PointsMaterial>(null!)
   const { invalidate } = useThree()
-  const { positions, colors, loading, pointCount } = useEquipmentPoints(
+  const { positions, colors, loading } = useEquipmentPoints(
     equipment.equipment_id,
     true,
     'medium'
   )
-  const { selectedPoints } = useEditingStore()
 
-  // Create modified colors array with selection highlighting and brightness boost
+  // Create modified colors array with brightness boost for visibility
   const displayColors = useMemo(() => {
     if (!colors) return colors
 
@@ -34,27 +32,14 @@ export default function PointCloudView({ equipment, isSelected, isDimmed = false
     if (!isSelected) {
       const minBrightness = 0.35
       for (let i = 0; i < newColors.length; i += 3) {
-        // Boost each channel to ensure minimum visibility
         newColors[i] = Math.max(newColors[i], minBrightness)
         newColors[i + 1] = Math.max(newColors[i + 1], minBrightness)
         newColors[i + 2] = Math.max(newColors[i + 2], minBrightness)
       }
     }
 
-    // Highlight selected points in cyan (0, 1, 1) for selected equipment
-    if (isSelected && selectedPoints.size > 0) {
-      selectedPoints.forEach((index) => {
-        const colorIndex = index * 3
-        if (colorIndex + 2 < newColors.length) {
-          newColors[colorIndex] = 0 // R
-          newColors[colorIndex + 1] = 1 // G
-          newColors[colorIndex + 2] = 1 // B
-        }
-      })
-    }
-
     return newColors
-  }, [colors, selectedPoints, isSelected])
+  }, [colors, isSelected])
 
   // Create buffer geometry
   const geometry = useMemo(() => {

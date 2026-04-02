@@ -1,6 +1,6 @@
 import { useState, Suspense, useMemo } from 'react'
 import { useCompanies, useCompanyFactories, useFactoryLines } from '@/hooks/useFactories'
-import { useFactoryEquipment } from '@/hooks/useEquipment'
+import { useFactoryEquipment, useEquipmentGroups } from '@/hooks/useEquipment'
 import { Company, Factory, ProductionLine } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,8 +11,6 @@ import Scene3D from '@/components/Scene3D'
 import EquipmentList from '@/components/EquipmentList'
 import RegPanel from '@/components/RegPanel'
 import ViewModeToggle from '@/components/ViewModeToggle'
-import EditingToolbar from '@/components/EditingToolbar'
-import { useEditingKeyboard } from '@/hooks/useEditingKeyboard'
 import { SelectionState } from '@/App'
 
 interface Props {
@@ -37,6 +35,10 @@ export default function FactoryLinePage({ selection, onSelectCompany, onSelectFa
   const { equipment, stats, loading: equipmentLoading, selected, setSelected, save } = useFactoryEquipment(
     selectedFactory?.code ?? ''
   )
+
+  // Equipment groups (라인 선택 시 라인별, 전체 보기 시 공장 전체)
+  const { groups } = useEquipmentGroups(selectedLine?.code ?? null, selectedFactory?.code ?? null)
+  const [selectedGroup, setSelectedGroup] = useState<import('@/lib/api').EquipmentGroup | null>(null)
 
   // 선택된 라인의 설비만 필터링 (설비 리스트용)
   const filteredEquipment = useMemo(() => {
@@ -84,8 +86,6 @@ export default function FactoryLinePage({ selection, onSelectCompany, onSelectFa
       lineCode: selectedLine.code
     }
   }, [equipment, selectedLine])
-
-  useEditingKeyboard()
 
   const handleSelectCompany = (company: Company) => {
     onSelectCompany(company)
@@ -254,6 +254,9 @@ export default function FactoryLinePage({ selection, onSelectCompany, onSelectFa
               selectedId={selected?.equipment_id ?? null}
               onSelect={eq => setSelected(eq)}
               lineMap={lineMap}
+              groups={groups}
+              selectedGroupId={selectedGroup?.id ?? null}
+              onSelectGroup={setSelectedGroup}
             />
 
             {/* 3D View - 전체 설비 표시, 선택된 라인 하이라이트 */}
@@ -270,13 +273,15 @@ export default function FactoryLinePage({ selection, onSelectCompany, onSelectFa
                   viewMode={viewMode}
                   focusLineCode={selectedLine?.code}
                   focusTarget={focusTarget}
+                  groups={groups}
+                  selectedGroupId={selectedGroup?.id ?? null}
+                  onSelectGroup={setSelectedGroup}
                 />
               </Suspense>
 
               {/* Toolbar */}
-              <div className="absolute top-4 left-4 flex items-center gap-3">
+              <div className="absolute top-4 left-4">
                 <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
-                <EditingToolbar selectedEquipmentId={selected?.equipment_id} />
               </div>
 
               {/* Current Location Info */}

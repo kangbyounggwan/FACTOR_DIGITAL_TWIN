@@ -1,118 +1,61 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Company, Factory, ProductionLine, fetchCompanies, fetchCompanyFactories, fetchFactories, fetchFactoryLines } from '@/lib/api'
 
+// 회사 목록 - 페이지 전환해도 캐시 유지
 export function useCompanies() {
-  const [companies, setCompanies] = useState<Company[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+  const queryClient = useQueryClient()
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await fetchCompanies()
-      setCompanies(data)
-    } catch (e) {
-      setError(e as Error)
-      setCompanies([])
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const { data: companies = [], isLoading: loading, error, refetch } = useQuery({
+    queryKey: ['companies'],
+    queryFn: fetchCompanies,
+    staleTime: 10 * 60 * 1000, // 10분간 캐시
+  })
 
-  useEffect(() => {
-    load()
-  }, [load])
+  const reload = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['companies'] })
+  }, [queryClient])
 
-  return { companies, loading, error, reload: load }
+  return { companies, loading, error: error as Error | null, reload }
 }
 
+// 회사별 공장 목록
 export function useCompanyFactories(companyCode: string | null) {
-  const [factories, setFactories] = useState<Factory[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
+  const { data: factories = [], isLoading: loading, error } = useQuery({
+    queryKey: ['company-factories', companyCode],
+    queryFn: () => fetchCompanyFactories(companyCode!),
+    enabled: !!companyCode,
+    staleTime: 10 * 60 * 1000,
+  })
 
-  const load = useCallback(async () => {
-    if (!companyCode) {
-      setFactories([])
-      setLoading(false)
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await fetchCompanyFactories(companyCode)
-      setFactories(data)
-    } catch (e) {
-      setError(e as Error)
-      setFactories([])
-    } finally {
-      setLoading(false)
-    }
-  }, [companyCode])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
-  return { factories, loading, error, reload: load }
+  return { factories, loading, error: error as Error | null }
 }
 
+// 전체 공장 목록
 export function useFactories() {
-  const [factories, setFactories] = useState<Factory[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+  const queryClient = useQueryClient()
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await fetchFactories()
-      setFactories(data)
-    } catch (e) {
-      setError(e as Error)
-      setFactories([])
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const { data: factories = [], isLoading: loading, error, refetch } = useQuery({
+    queryKey: ['factories'],
+    queryFn: fetchFactories,
+    staleTime: 10 * 60 * 1000,
+  })
 
-  useEffect(() => {
-    load()
-  }, [load])
+  const reload = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['factories'] })
+  }, [queryClient])
 
-  return { factories, loading, error, reload: load }
+  return { factories, loading, error: error as Error | null, reload }
 }
 
+// 공장별 라인 목록
 export function useFactoryLines(factoryCode: string | null) {
-  const [lines, setLines] = useState<ProductionLine[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
+  const { data: lines = [], isLoading: loading, error } = useQuery({
+    queryKey: ['factory-lines', factoryCode],
+    queryFn: () => fetchFactoryLines(factoryCode!),
+    enabled: !!factoryCode,
+    staleTime: 10 * 60 * 1000,
+  })
 
-  const load = useCallback(async () => {
-    if (!factoryCode) {
-      setLines([])
-      setLoading(false)
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await fetchFactoryLines(factoryCode)
-      setLines(data)
-    } catch (e) {
-      setError(e as Error)
-      setLines([])
-    } finally {
-      setLoading(false)
-    }
-  }, [factoryCode])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
-  return { lines, loading, error, reload: load }
+  return { lines, loading, error: error as Error | null }
 }

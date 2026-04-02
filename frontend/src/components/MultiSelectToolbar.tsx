@@ -9,15 +9,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Equipment } from '@/lib/api'
-import { X, Grid3X3, MoveHorizontal, MoveVertical, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Equipment, EquipmentUpdate, createEquipmentGroup } from '@/lib/api'
+import { X, Grid3X3, MoveHorizontal, MoveVertical, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal, Link2 } from 'lucide-react'
 import { AlignmentOption } from './AlignmentDialog'
+import { toast } from 'sonner'
 
 interface MultiSelectToolbarProps {
   selectedIds: string[]
   equipment: Equipment[]
   onAlign: (option: AlignmentOption, equipment: Equipment[], bounds: { x: number; y: number; width: number; height: number }, spacing?: number) => void
   onClearSelection: () => void
+  onBatchUpdate?: (equipmentIds: string[], updates: EquipmentUpdate) => void
+  lineCode?: string  // 그룹 생성 시 필요
+  onGroupCreated?: () => void  // 그룹 생성 후 콜백
 }
 
 export function MultiSelectToolbar({
@@ -25,9 +37,20 @@ export function MultiSelectToolbar({
   equipment,
   onAlign,
   onClearSelection,
+  onBatchUpdate,
+  lineCode,
+  onGroupCreated,
 }: MultiSelectToolbarProps) {
   const [spacing, setSpacing] = useState<string>('0')
   const [selectedZone, setSelectedZone] = useState<string>('_selection')
+  const [batchW, setBatchW] = useState<string>('')
+  const [batchD, setBatchD] = useState<string>('')
+
+  // 그룹 생성 다이얼로그 상태
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false)
+  const [groupName, setGroupName] = useState('')
+  const [groupType, setGroupType] = useState('BRIDGE')
+  const [creatingGroup, setCreatingGroup] = useState(false)
 
   // 선택된 설비 목록
   const selectedEquipment = useMemo(() => {
@@ -113,6 +136,62 @@ export function MultiSelectToolbar({
     }
   }
 
+  // 그룹 생성 가능한 라인 코드 (props 또는 선택된 설비에서 추출)
+  const effectiveLineCode = useMemo(() => {
+    if (lineCode) return lineCode
+    // 선택된 설비의 line_code 사용 (모두 같은 라인이어야 함)
+    const lineCodes = new Set(currentEquipment.map(eq => eq.line_code).filter(Boolean))
+    if (lineCodes.size === 1) {
+      return Array.from(lineCodes)[0]
+    }
+    return null
+  }, [lineCode, currentEquipment])
+
+  // 그룹 생성 핸들러
+  const handleCreateGroup = async () => {
+    if (!effectiveLineCode || currentEquipment.length < 2) return
+
+    const name = groupName.trim() || `그룹 (${currentEquipment.map(eq => eq.equipment_id.split('_').pop()).join(', ')})`
+
+    setCreatingGroup(true)
+    try {
+      await createEquipmentGroup({
+        line_id: effectiveLineCode,
+        name,
+        group_type: groupType,
+        equipment_ids: currentEquipment.map(eq => eq.equipment_id),
+      })
+      toast.success(`그룹 "${name}" 생성 완료`)
+      setGroupDialogOpen(false)
+      setGroupName('')
+      onGroupCreated?.()
+    } catch (error) {
+      console.error('Failed to create group:', error)
+      toast.error('그룹 생성 실패')
+    } finally {
+      setCreatingGroup(false)
+    }
+  }
+
+  // W, D 크기 일괄 적용 (로컬 상태만 업데이트)
+  const handleApplySize = () => {
+    if (!onBatchUpdate || currentEquipment.length === 0) return
+
+    const updates: EquipmentUpdate = {}
+    const wValue = parseFloat(batchW)
+    const dValue = parseFloat(batchD)
+
+    if (!isNaN(wValue) && batchW !== '') updates.size_w = wValue
+    if (!isNaN(dValue) && batchD !== '') updates.size_d = dValue
+
+    if (Object.keys(updates).length === 0) return
+
+    const ids = currentEquipment.map(eq => eq.equipment_id)
+    onBatchUpdate(ids, updates)
+    setBatchW('')
+    setBatchD('')
+  }
+
   if (selectedIds.length === 0) return null
 
   return (
@@ -169,6 +248,49 @@ export function MultiSelectToolbar({
           </div>
         </div>
 
+        {/* W, D 크기 일괄 적용 */}
+        {onBatchUpdate && (
+          <div>
+            <Label className="text-xs text-muted-foreground">크기 일괄 적용 (m)</Label>
+            <div className="flex items-center gap-1.5 mt-1">
+              <div className="flex items-center gap-1 flex-1">
+                <span className="text-[10px] text-muted-foreground w-4">W</span>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={batchW}
+                  onChange={(e) => setBatchW(e.target.value)}
+                  placeholder="너비"
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="flex items-center gap-1 flex-1">
+                <span className="text-[10px] text-muted-foreground w-4">D</span>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={batchD}
+                  onChange={(e) => setBatchD(e.target.value)}
+                  placeholder="깊이"
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+            <Button
+              variant="default"
+              size="sm"
+              className="w-full h-8 text-xs mt-1.5"
+              onClick={handleApplySize}
+              disabled={(!batchW && !batchD) || currentEquipment.length === 0}
+            >
+              크기 적용
+            </Button>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              {currentEquipment.length}개 설비에 적용
+            </p>
+          </div>
+        )}
+
         {/* 균등 배치 */}
         <div>
           <Label className="text-xs text-muted-foreground mb-2 block">균등 배치</Label>
@@ -178,6 +300,7 @@ export function MultiSelectToolbar({
               size="sm"
               className="h-8 text-xs"
               onClick={() => handleAlign('horizontal-distribute')}
+              title="위치 기준 정렬"
             >
               <MoveHorizontal className="h-3 w-3 mr-1" />
               가로
@@ -186,10 +309,31 @@ export function MultiSelectToolbar({
               variant="outline"
               size="sm"
               className="h-8 text-xs"
+              onClick={() => handleAlign('horizontal-distribute-reverse')}
+              title="EQ번호 역순 정렬"
+            >
+              <MoveHorizontal className="h-3 w-3 mr-1" />
+              가로↺
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
               onClick={() => handleAlign('vertical-distribute')}
+              title="위치 기준 정렬"
             >
               <MoveVertical className="h-3 w-3 mr-1" />
               세로
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => handleAlign('vertical-distribute-reverse')}
+              title="EQ번호 역순 정렬"
+            >
+              <MoveVertical className="h-3 w-3 mr-1" />
+              세로↺
             </Button>
           </div>
         </div>
@@ -275,6 +419,22 @@ export function MultiSelectToolbar({
           </Button>
         </div>
 
+        {/* 그룹 생성 */}
+        {effectiveLineCode && currentEquipment.length >= 2 && (
+          <div>
+            <Label className="text-xs text-muted-foreground mb-2 block">설비 그룹</Label>
+            <Button
+              variant="default"
+              size="sm"
+              className="w-full h-8 text-xs"
+              onClick={() => setGroupDialogOpen(true)}
+            >
+              <Link2 className="h-3 w-3 mr-1" />
+              그룹 생성 ({currentEquipment.length}개)
+            </Button>
+          </div>
+        )}
+
         {/* 선택 영역 정보 */}
         {currentBounds && (
           <div className="text-[10px] text-muted-foreground border-t pt-3 mt-3">
@@ -288,6 +448,58 @@ export function MultiSelectToolbar({
           Shift + 화살표: 큰 이동
         </div>
       </div>
+
+      {/* 그룹 생성 다이얼로그 */}
+      <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>설비 그룹 생성</DialogTitle>
+            <DialogDescription>
+              {currentEquipment.length}개 설비를 하나의 그룹으로 묶습니다.
+              <br />
+              <span className="text-xs">
+                {currentEquipment.map(eq => eq.equipment_id.split('_').pop()).join(', ')}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="group-name">그룹 이름</Label>
+              <Input
+                id="group-name"
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                placeholder={`그룹 (${currentEquipment.map(eq => eq.equipment_id.split('_').pop()).join(', ')})`}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="group-type">그룹 타입</Label>
+              <Select value={groupType} onValueChange={setGroupType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BRIDGE">브릿지 (존 연결)</SelectItem>
+                  <SelectItem value="CLUSTER">클러스터 (동일 기능)</SelectItem>
+                  <SelectItem value="FLOW">플로우 (공정 흐름)</SelectItem>
+                  <SelectItem value="OTHER">기타</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGroupDialogOpen(false)}>
+              취소
+            </Button>
+            <Button onClick={handleCreateGroup} disabled={creatingGroup}>
+              {creatingGroup ? '생성 중...' : '그룹 생성'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

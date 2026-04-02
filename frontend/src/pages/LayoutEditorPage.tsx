@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useCompanies, useCompanyFactories, useFactoryLines } from '@/hooks/useFactories'
-import { useFactoryEquipment } from '@/hooks/useEquipment'
+import { useFactoryEquipment, useEquipmentGroups } from '@/hooks/useEquipment'
 import { useLayouts, useActiveLayout, useLayoutMutations } from '@/hooks/useLayouts'
-import { Company, Factory, ProductionLine, Equipment, LayoutEquipmentCreate, updateEquipment, fetchLayout } from '@/lib/api'
+import { Company, Factory, ProductionLine, Equipment, EquipmentUpdate, LayoutEquipmentCreate, updateEquipmentBatch, EquipmentBatchUpdate, fetchLayout } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -49,6 +49,10 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
   const { equipment, stats, loading: equipmentLoading, selected, setSelected, save, reload: reloadEquipment } = useFactoryEquipment(
     selectedFactory?.code ?? ''
   )
+
+  // Equipment groups (라인 선택 시 라인별, 전체 보기 시 공장 전체)
+  const { groups, reload: reloadGroups } = useEquipmentGroups(selectedLine?.code ?? null, selectedFactory?.code ?? null)
+  const [selectedGroup, setSelectedGroup] = useState<import('@/lib/api').EquipmentGroup | null>(null)
 
   // 레이아웃 데이터
   const { layouts, loading: layoutsLoading, reload: reloadLayouts } = useLayouts(selectedFactory?.id ?? null)
@@ -112,27 +116,11 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
     setSelected(eq)
   }, [selected, regPanelHasChanges, setSelected])
 
-  // 활성 레이아웃이 로드되면 자동 선택
+  // 활성 레이아웃이 로드되면 자동 선택 (위치/크기는 항상 DB 최신값 사용)
   useEffect(() => {
     if (activeLayout && !selectedLayoutId) {
       setSelectedLayoutId(activeLayout.id)
-      // 활성 레이아웃의 위치 정보 적용
-      if (activeLayout.equipment && activeLayout.equipment.length > 0) {
-        const newPositions: Record<string, { x: number; y: number }> = {}
-        const newSizes: Record<string, { w: number; d: number }> = {}
-        for (const eq of activeLayout.equipment) {
-          newPositions[eq.equipment_id] = {
-            x: eq.centroid_x,
-            y: eq.centroid_z,
-          }
-          newSizes[eq.equipment_id] = {
-            w: eq.size_w,
-            d: eq.size_d,
-          }
-        }
-        setLocalPositions(newPositions)
-        setLocalSizes(newSizes)
-      }
+      // 위치/크기는 로드하지 않음 - 항상 최신 equipment_scans 데이터 사용
       // 바닥 정보 로드
       if (activeLayout.floor_x != null && activeLayout.floor_width != null) {
         setFloorBounds({
@@ -268,6 +256,29 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
     toast.success(`${eqList.length}개 설비 정렬 완료`)
   }, [])
 
+  // 다중 선택 설비 크기 일괄 업데이트 핸들러 (로컬 상태만 업데이트, 저장 버튼 시 실제 저장)
+  const handleBatchUpdate = useCallback((equipmentIds: string[], updates: EquipmentUpdate) => {
+    if (updates.size_w !== undefined || updates.size_d !== undefined) {
+      setLocalSizes(prev => {
+        const newSizes = { ...prev }
+        for (const id of equipmentIds) {
+          const eq = equipment.find(e => e.equipment_id === id)
+          if (eq) {
+            const currentW = newSizes[id]?.w ?? eq.size_w
+            const currentD = newSizes[id]?.d ?? eq.size_d
+            newSizes[id] = {
+              w: updates.size_w ?? currentW,
+              d: updates.size_d ?? currentD,
+            }
+          }
+        }
+        return newSizes
+      })
+      setHasChanges(true)
+      toast.success(`${equipmentIds.length}개 설비 크기 변경 (저장 필요)`)
+    }
+  }, [equipment])
+
   // 현재 설비 위치를 레이아웃 형식으로 반환 (소수점 2자리)
   const getCurrentEquipmentForLayout = useCallback((): LayoutEquipmentCreate[] => {
     const round2 = (n: number) => Math.round(n * 100) / 100
@@ -307,32 +318,36 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
 
     // 비동기 저장 시작
     const saveAsync = async () => {
-      const updatePromises: Promise<any>[] = []
       // 소수점 2자리 반올림
       const round2 = (n: number) => Math.round(n * 100) / 100
 
-      // 위치 변경된 설비 업데이트 (2D의 y는 3D의 z)
-      for (const [equipmentId, pos] of Object.entries(positionsToSave)) {
-        updatePromises.push(
-          updateEquipment(equipmentId, {
-            centroid_x: round2(pos.x),
-            centroid_z: round2(pos.y),
-          })
-        )
+      // 위치/크기 변경을 하나의 배치 업데이트로 합침
+      const batchUpdates: EquipmentBatchUpdate[] = []
+      const equipmentIdsToUpdate = new Set([
+        ...Object.keys(positionsToSave),
+        ...Object.keys(sizesToSave),
+      ])
+
+      for (const equipmentId of equipmentIdsToUpdate) {
+        const pos = positionsToSave[equipmentId]
+        const size = sizesToSave[equipmentId]
+        const update: EquipmentBatchUpdate = { equipment_id: equipmentId }
+
+        if (pos) {
+          update.centroid_x = round2(pos.x)
+          update.centroid_z = round2(pos.y)  // 2D의 y는 3D의 z
+        }
+        if (size) {
+          update.size_w = round2(size.w)
+          update.size_d = round2(size.d)
+        }
+
+        batchUpdates.push(update)
       }
 
-      // 크기 변경된 설비 업데이트
-      for (const [equipmentId, size] of Object.entries(sizesToSave)) {
-        updatePromises.push(
-          updateEquipment(equipmentId, {
-            size_w: round2(size.w),
-            size_d: round2(size.d),
-          })
-        )
-      }
-
-      if (updatePromises.length > 0) {
-        await Promise.all(updatePromises)
+      // 한 번의 API 호출로 모든 설비 업데이트
+      if (batchUpdates.length > 0) {
+        await updateEquipmentBatch(batchUpdates)
       }
 
       // 레이아웃에도 저장 (선택적)
@@ -351,8 +366,8 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
         })
       }
 
-      // 설비 데이터 새로고침
-      await reloadEquipment()
+      // 설비 데이터 새로고침 (silent: 깜빡임 방지)
+      await reloadEquipment(true)
     }
 
     // toast.promise로 비동기 작업 표시
@@ -641,6 +656,9 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
               selectedId={selected?.equipment_id ?? null}
               onSelect={handleSelectEquipment}
               lineMap={lineMap}
+              groups={groups}
+              selectedGroupId={selectedGroup?.id ?? null}
+              onSelectGroup={setSelectedGroup}
             />
 
             {/* 2D Canvas */}
@@ -658,6 +676,9 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
                 multiSelectedIds={multiSelectedIds}
                 onMultiSelect={handleMultiSelect}
                 onMoveMultiple={handleMoveMultiple}
+                groups={groups}
+                selectedGroupId={selectedGroup?.id ?? null}
+                onSelectGroup={setSelectedGroup}
               />
 
               {/* 상단 툴바 - 단일 행 */}
@@ -962,6 +983,12 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
                 equipment={equipmentWithLocalPositions}
                 onAlign={handleAlignment}
                 onClearSelection={handleClearMultiSelection}
+                onBatchUpdate={handleBatchUpdate}
+                lineCode={selectedLine?.code}
+                onGroupCreated={() => {
+                  reloadEquipment(true)
+                  reloadGroups()
+                }}
               />
             )}
 

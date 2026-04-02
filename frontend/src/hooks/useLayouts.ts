@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Layout,
   LayoutDetail,
@@ -19,107 +20,63 @@ import {
 
 /**
  * Hook for managing layouts list for a factory
+ * React Query로 캐싱하여 페이지 전환 시 재호출 방지
  */
 export function useLayouts(factoryId: string | null) {
-  const [layouts, setLayouts] = useState<Layout[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
+  const queryClient = useQueryClient()
 
-  const load = useCallback(async () => {
-    if (!factoryId) {
-      setLayouts([])
-      setLoading(false)
-      return
-    }
+  const { data: layouts = [], isLoading: loading, error } = useQuery({
+    queryKey: ['layouts', factoryId],
+    queryFn: () => fetchLayouts(factoryId!),
+    enabled: !!factoryId,
+    staleTime: 5 * 60 * 1000,
+  })
 
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await fetchLayouts(factoryId)
-      setLayouts(data)
-    } catch (e) {
-      setError(e as Error)
-      setLayouts([])
-    } finally {
-      setLoading(false)
-    }
-  }, [factoryId])
+  const reload = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['layouts', factoryId] })
+  }, [queryClient, factoryId])
 
-  useEffect(() => {
-    load()
-  }, [load])
-
-  return { layouts, loading, error, reload: load }
+  return { layouts, loading, error: error as Error | null, reload }
 }
 
 /**
  * Hook for managing a single layout's details
  */
 export function useLayout(layoutId: string | null) {
-  const [layout, setLayout] = useState<LayoutDetail | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
+  const queryClient = useQueryClient()
 
-  const load = useCallback(async () => {
-    if (!layoutId) {
-      setLayout(null)
-      setLoading(false)
-      return
-    }
+  const { data: layout = null, isLoading: loading, error } = useQuery({
+    queryKey: ['layout', layoutId],
+    queryFn: () => fetchLayout(layoutId!),
+    enabled: !!layoutId,
+    staleTime: 5 * 60 * 1000,
+  })
 
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await fetchLayout(layoutId)
-      setLayout(data)
-    } catch (e) {
-      setError(e as Error)
-      setLayout(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [layoutId])
+  const reload = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['layout', layoutId] })
+  }, [queryClient, layoutId])
 
-  useEffect(() => {
-    load()
-  }, [load])
-
-  return { layout, loading, error, reload: load }
+  return { layout, loading, error: error as Error | null, reload }
 }
 
 /**
  * Hook for managing the active layout for a factory
  */
 export function useActiveLayout(factoryId: string | null) {
-  const [layout, setLayout] = useState<LayoutDetail | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
+  const queryClient = useQueryClient()
 
-  const load = useCallback(async () => {
-    if (!factoryId) {
-      setLayout(null)
-      setLoading(false)
-      return
-    }
+  const { data: layout = null, isLoading: loading, error } = useQuery({
+    queryKey: ['active-layout', factoryId],
+    queryFn: () => fetchActiveLayout(factoryId!),
+    enabled: !!factoryId,
+    staleTime: 5 * 60 * 1000,
+  })
 
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await fetchActiveLayout(factoryId)
-      setLayout(data)
-    } catch (e) {
-      setError(e as Error)
-      setLayout(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [factoryId])
+  const reload = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['active-layout', factoryId] })
+  }, [queryClient, factoryId])
 
-  useEffect(() => {
-    load()
-  }, [load])
-
-  return { layout, loading, error, reload: load }
+  return { layout, loading, error: error as Error | null, reload }
 }
 
 /**
@@ -128,6 +85,17 @@ export function useActiveLayout(factoryId: string | null) {
 export function useLayoutMutations() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<Error | null>(null)
+  const queryClient = useQueryClient()
+
+  // 레이아웃 관련 캐시 무효화 헬퍼
+  const invalidateLayoutQueries = useCallback((factoryId?: string) => {
+    queryClient.invalidateQueries({ queryKey: ['layouts'] })
+    queryClient.invalidateQueries({ queryKey: ['active-layout'] })
+    if (factoryId) {
+      queryClient.invalidateQueries({ queryKey: ['layouts', factoryId] })
+      queryClient.invalidateQueries({ queryKey: ['active-layout', factoryId] })
+    }
+  }, [queryClient])
 
   const create = useCallback(async (
     factoryId: string,
@@ -146,6 +114,7 @@ export function useLayoutMutations() {
         equipment,
         is_active: isActive,
       })
+      invalidateLayoutQueries(factoryId)
       return result
     } catch (e) {
       setError(e as Error)
@@ -153,7 +122,7 @@ export function useLayoutMutations() {
     } finally {
       setSaving(false)
     }
-  }, [])
+  }, [invalidateLayoutQueries])
 
   const update = useCallback(async (
     layoutId: string,
@@ -172,6 +141,9 @@ export function useLayoutMutations() {
       setSaving(true)
       setError(null)
       const result = await updateLayout(layoutId, data)
+      queryClient.invalidateQueries({ queryKey: ['layout', layoutId] })
+      queryClient.invalidateQueries({ queryKey: ['layouts'] })
+      queryClient.invalidateQueries({ queryKey: ['active-layout'] })
       return result
     } catch (e) {
       setError(e as Error)
@@ -179,26 +151,28 @@ export function useLayoutMutations() {
     } finally {
       setSaving(false)
     }
-  }, [])
+  }, [queryClient])
 
   const remove = useCallback(async (layoutId: string) => {
     try {
       setSaving(true)
       setError(null)
       await deleteLayout(layoutId)
+      invalidateLayoutQueries()
     } catch (e) {
       setError(e as Error)
       throw e
     } finally {
       setSaving(false)
     }
-  }, [])
+  }, [invalidateLayoutQueries])
 
   const activate = useCallback(async (layoutId: string) => {
     try {
       setSaving(true)
       setError(null)
       const result = await activateLayout(layoutId)
+      invalidateLayoutQueries()
       return result
     } catch (e) {
       setError(e as Error)
@@ -206,7 +180,7 @@ export function useLayoutMutations() {
     } finally {
       setSaving(false)
     }
-  }, [])
+  }, [invalidateLayoutQueries])
 
   const clone = useCallback(async (
     layoutId: string,
@@ -217,6 +191,7 @@ export function useLayoutMutations() {
       setSaving(true)
       setError(null)
       const result = await cloneLayout(layoutId, newName, newDescription)
+      invalidateLayoutQueries()
       return result
     } catch (e) {
       setError(e as Error)
@@ -224,7 +199,7 @@ export function useLayoutMutations() {
     } finally {
       setSaving(false)
     }
-  }, [])
+  }, [invalidateLayoutQueries])
 
   const saveFromViewer = useCallback(async (
     factoryId: string,
@@ -240,6 +215,7 @@ export function useLayoutMutations() {
       setSaving(true)
       setError(null)
       const result = await saveLayoutFromViewer(factoryId, name, equipment, description, setActive, floorBounds, backgroundImage, backgroundOpacity)
+      invalidateLayoutQueries(factoryId)
       return result
     } catch (e) {
       setError(e as Error)
@@ -247,7 +223,7 @@ export function useLayoutMutations() {
     } finally {
       setSaving(false)
     }
-  }, [])
+  }, [invalidateLayoutQueries])
 
   const updateEquipment = useCallback(async (
     layoutId: string,
@@ -257,6 +233,8 @@ export function useLayoutMutations() {
       setSaving(true)
       setError(null)
       const result = await updateLayoutEquipment(layoutId, equipment)
+      queryClient.invalidateQueries({ queryKey: ['layout', layoutId] })
+      queryClient.invalidateQueries({ queryKey: ['active-layout'] })
       return result
     } catch (e) {
       setError(e as Error)
@@ -264,7 +242,7 @@ export function useLayoutMutations() {
     } finally {
       setSaving(false)
     }
-  }, [])
+  }, [queryClient])
 
   return {
     saving,
@@ -283,33 +261,14 @@ export function useLayoutMutations() {
  * Hook for comparing two layouts
  */
 export function useLayoutComparison(layoutAId: string | null, layoutBId: string | null) {
-  const [comparison, setComparison] = useState<LayoutCompareResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
+  const { data: comparison = null, isLoading: loading, error, refetch } = useQuery({
+    queryKey: ['layout-comparison', layoutAId, layoutBId],
+    queryFn: () => compareLayouts(layoutAId!, layoutBId!),
+    enabled: !!(layoutAId && layoutBId),
+    staleTime: 2 * 60 * 1000, // 비교는 2분 캐시
+  })
 
-  const compare = useCallback(async () => {
-    if (!layoutAId || !layoutBId) {
-      setComparison(null)
-      setLoading(false)
-      return
-    }
+  const reload = useCallback(() => refetch(), [refetch])
 
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await compareLayouts(layoutAId, layoutBId)
-      setComparison(data)
-    } catch (e) {
-      setError(e as Error)
-      setComparison(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [layoutAId, layoutBId])
-
-  useEffect(() => {
-    compare()
-  }, [compare])
-
-  return { comparison, loading, error, reload: compare }
+  return { comparison, loading, error: error as Error | null, reload }
 }

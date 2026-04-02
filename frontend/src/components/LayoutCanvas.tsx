@@ -1,5 +1,13 @@
-import { useRef, useState, useCallback, useEffect } from 'react'
-import { Equipment } from '@/lib/api'
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
+import { Equipment, EquipmentGroup } from '@/lib/api'
+
+// 그룹 타입별 색상
+const GROUP_COLORS: Record<string, string> = {
+  BRIDGE: '#00ffff',   // 시안 (존 연결)
+  CLUSTER: '#ff00ff',  // 마젠타 (동일 기능)
+  FLOW: '#ffff00',     // 노랑 (공정 흐름)
+  OTHER: '#ff8800',    // 주황 (기타)
+}
 
 // 설비 타입별 색상
 const TYPE_COLORS: Record<string, string> = {
@@ -46,6 +54,9 @@ interface LayoutCanvasProps {
   multiSelectedIds?: string[]
   onMultiSelect?: (ids: string[]) => void
   onMoveMultiple?: (ids: string[], dx: number, dy: number) => void
+  groups?: EquipmentGroup[]
+  selectedGroupId?: string | null
+  onSelectGroup?: (group: EquipmentGroup | null) => void
 }
 
 type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se' | null
@@ -63,7 +74,19 @@ export default function LayoutCanvas({
   multiSelectedIds = [],
   onMultiSelect,
   onMoveMultiple,
+  groups = [],
+  selectedGroupId,
+  onSelectGroup,
 }: LayoutCanvasProps) {
+  // 그룹에 속한 설비 ID들 (그룹 박스로 대체되므로 개별 렌더링 제외)
+  const groupedEquipmentIds = useMemo(() => {
+    const ids = new Set<string>()
+    groups.forEach(group => {
+      group.member_ids.forEach(id => ids.add(id))
+    })
+    return ids
+  }, [groups])
+
   const svgRef = useRef<SVGSVGElement>(null)
   const wasInteractingRef = useRef(false)
   const viewBoxInitialized = useRef(false)
@@ -167,13 +190,34 @@ export default function LayoutCanvas({
     viewBoxInitialized.current = true
   }, [equipment, calculateFitBounds])
 
-  // SVG 좌표로 변환
+  // SVG 좌표로 변환 (preserveAspectRatio="xMidYMid meet" 고려)
   const getSvgPoint = useCallback((clientX: number, clientY: number) => {
     if (!svgRef.current) return { x: 0, y: 0 }
     const rect = svgRef.current.getBoundingClientRect()
     const vb = viewBoxRef.current
-    const x = vb.x + ((clientX - rect.left) / rect.width) * vb.width
-    const y = vb.y + ((clientY - rect.top) / rect.height) * vb.height
+
+    // viewBox와 SVG 요소의 종횡비 계산
+    const viewBoxAspect = vb.width / vb.height
+    const svgAspect = rect.width / rect.height
+
+    let renderedWidth: number, renderedHeight: number
+    let offsetX = 0, offsetY = 0
+
+    if (viewBoxAspect > svgAspect) {
+      // viewBox가 더 넓음 - 위아래 여백 (letterbox)
+      renderedWidth = rect.width
+      renderedHeight = rect.width / viewBoxAspect
+      offsetY = (rect.height - renderedHeight) / 2
+    } else {
+      // viewBox가 더 높음 - 좌우 여백 (pillarbox)
+      renderedHeight = rect.height
+      renderedWidth = rect.height * viewBoxAspect
+      offsetX = (rect.width - renderedWidth) / 2
+    }
+
+    // 실제 렌더링 영역 기준으로 좌표 계산
+    const x = vb.x + ((clientX - rect.left - offsetX) / renderedWidth) * vb.width
+    const y = vb.y + ((clientY - rect.top - offsetY) / renderedHeight) * vb.height
     return { x, y }
   }, [])
 
@@ -642,6 +686,90 @@ export default function LayoutCanvas({
             <circle cx={floorBounds.x + floorBounds.width} cy={floorBounds.y + floorBounds.height} r={0.15} fill="#4a9eff" />
           </g>
         )}
+
+        {/* 그룹 연결 표시 */}
+        {groups.map(group => {
+          const members = equipment.filter(eq => group.member_ids.includes(eq.equipment_id))
+          if (members.length < 2) return null
+
+          const color = GROUP_COLORS[group.group_type] ?? GROUP_COLORS.OTHER
+
+          // 바운딩 박스 계산
+          const minX = Math.min(...members.map(m => m.centroid_x - m.size_w / 2))
+          const maxX = Math.max(...members.map(m => m.centroid_x + m.size_w / 2))
+          const minY = Math.min(...members.map(m => m.centroid_z - m.size_d / 2))
+          const maxY = Math.max(...members.map(m => m.centroid_z + m.size_d / 2))
+
+          const padding = 0.3
+          const boxX = minX - padding
+          const boxY = minY - padding
+          const boxW = maxX - minX + padding * 2
+          const boxH = maxY - minY + padding * 2
+
+          // 연결선: 각 설비 쌍을 연결
+          const lines: { x1: number; y1: number; x2: number; y2: number }[] = []
+          for (let i = 0; i < members.length - 1; i++) {
+            lines.push({
+              x1: members[i].centroid_x,
+              y1: members[i].centroid_z,
+              x2: members[i + 1].centroid_x,
+              y2: members[i + 1].centroid_z,
+            })
+          }
+
+          const isGroupSelected = group.id === selectedGroupId
+
+          return (
+            <g key={group.id}>
+              {/* 바운딩 박스 (클릭 가능) */}
+              <rect
+                x={boxX}
+                y={boxY}
+                width={boxW}
+                height={boxH}
+                fill={color}
+                fillOpacity={isGroupSelected ? 0.2 : 0.08}
+                stroke={isGroupSelected ? '#fff' : color}
+                strokeWidth={isGroupSelected ? 0.12 : 0.08}
+                strokeDasharray="0.3 0.15"
+                rx={0.2}
+                style={{ cursor: 'pointer' }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSelectGroup?.(isGroupSelected ? null : group)
+                }}
+              />
+
+              {/* 연결선 */}
+              {lines.map((line, idx) => (
+                <line
+                  key={idx}
+                  x1={line.x1}
+                  y1={line.y1}
+                  x2={line.x2}
+                  y2={line.y2}
+                  stroke={color}
+                  strokeWidth={0.1}
+                  strokeDasharray="0.2 0.1"
+                  opacity={0.8}
+                />
+              ))}
+
+              {/* 그룹 이름 및 타입 라벨 (박스 상단 외부) */}
+              <text
+                x={boxX + boxW / 2}
+                y={boxY - 0.3}
+                textAnchor="middle"
+                fill={color}
+                fontSize={0.35}
+                fontFamily="monospace"
+                fontWeight="bold"
+              >
+                {group.name} [{group.group_type}]
+              </text>
+            </g>
+          )
+        })}
 
         {/* 설비 렌더링 */}
         {equipment.map(eq => {

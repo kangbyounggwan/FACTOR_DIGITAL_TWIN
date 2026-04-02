@@ -372,15 +372,15 @@ export default function AdminPage() {
   const selectedFactory = factories.find(f => f.id === selectedFactoryId)
 
   return (
-    <div className="h-full flex flex-col p-6 overflow-hidden">
-      <div className="mb-6">
+    <div className="h-full p-6 overflow-hidden flex flex-col">
+      <div className="mb-6 flex-shrink-0">
         <h1 className="text-2xl font-bold">관리</h1>
         <p className="text-muted-foreground">회사, 공장, 생산라인, 설비, 레이아웃을 관리합니다.</p>
       </div>
 
-      <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden min-h-0">
+      <div className="flex-1 grid grid-cols-4 gap-4" style={{ minHeight: 0 }}>
         {/* Companies Column */}
-        <Card className="flex flex-col overflow-hidden min-h-0">
+        <Card className="flex flex-col overflow-hidden" style={{ minHeight: 0 }}>
           <CardHeader className="flex-shrink-0 py-3 px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -393,7 +393,7 @@ export default function AdminPage() {
             </div>
             <CardDescription className="text-xs">{companies.length}개</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-0 min-h-0">
+          <CardContent className="flex-1 overflow-auto p-0" style={{ minHeight: 0 }}>
             <Table>
               <TableBody>
                 {companies.map((company) => (
@@ -404,7 +404,7 @@ export default function AdminPage() {
                   >
                     <TableCell className="py-2">
                       <div className="font-medium text-sm">{company.name}</div>
-                      <div className="text-xs text-muted-foreground">{company.code}</div>
+                      <div className={`text-xs ${selectedCompanyId === company.id ? 'text-accent-foreground/70' : 'text-muted-foreground'}`}>{company.code}</div>
                     </TableCell>
                     <TableCell className="py-2 w-16">
                       <div className="flex gap-0.5">
@@ -447,7 +447,7 @@ export default function AdminPage() {
         </Card>
 
         {/* Factories Column */}
-        <Card className="flex flex-col overflow-hidden min-h-0">
+        <Card className="flex flex-col overflow-hidden" style={{ minHeight: 0 }}>
           <CardHeader className="flex-shrink-0 py-3 px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -468,7 +468,7 @@ export default function AdminPage() {
               {selectedCompany ? `${factories.length}개` : '회사 선택'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-0 min-h-0">
+          <CardContent className="flex-1 overflow-auto p-0" style={{ minHeight: 0 }}>
             {selectedCompanyId ? (
               <>
                 <Table>
@@ -481,7 +481,7 @@ export default function AdminPage() {
                       >
                         <TableCell className="py-2">
                           <div className="font-medium text-sm">{factory.name}</div>
-                          <div className="text-xs text-muted-foreground">{factory.code}</div>
+                          <div className={`text-xs ${selectedFactoryId === factory.id ? 'text-accent-foreground/70' : 'text-muted-foreground'}`}>{factory.code}</div>
                         </TableCell>
                         <TableCell className="py-2 w-16">
                           <div className="flex gap-0.5">
@@ -593,7 +593,7 @@ export default function AdminPage() {
         </Card>
 
         {/* Lines Column */}
-        <Card className="flex flex-col overflow-hidden min-h-0">
+        <Card className="flex flex-col overflow-hidden" style={{ minHeight: 0 }}>
           <CardHeader className="flex-shrink-0 py-3 px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -614,7 +614,7 @@ export default function AdminPage() {
               {selectedFactory ? `${lines.length}개` : '공장 선택'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-0 min-h-0">
+          <CardContent className="flex-1 overflow-auto p-0" style={{ minHeight: 0 }}>
             {selectedFactoryId ? (
               <Table>
                 <TableBody>
@@ -626,7 +626,7 @@ export default function AdminPage() {
                     >
                       <TableCell className="py-2">
                         <div className="font-medium text-sm">{line.name}</div>
-                        <div className="text-xs text-muted-foreground">{line.code}</div>
+                        <div className={`text-xs ${selectedLineId === line.id ? 'text-accent-foreground/70' : 'text-muted-foreground'}`}>{line.code}</div>
                       </TableCell>
                       <TableCell className="py-2 w-10">
                         <Badge variant="secondary" className="text-[10px]">{line.equipment_count}</Badge>
@@ -677,7 +677,7 @@ export default function AdminPage() {
         </Card>
 
         {/* Equipment Column */}
-        <Card className="flex flex-col overflow-hidden min-h-0">
+        <Card className="flex flex-col overflow-hidden" style={{ minHeight: 0 }}>
           <CardHeader className="flex-shrink-0 py-3 px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -698,7 +698,7 @@ export default function AdminPage() {
               {selectedLine ? `${equipment.length}개` : '라인 선택'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-0 min-h-0">
+          <CardContent className="flex-1 overflow-auto p-0" style={{ minHeight: 0 }}>
             {selectedLineId ? (
               <div className="divide-y">
                 {(() => {

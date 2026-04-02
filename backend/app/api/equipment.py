@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, List
 import random
 from fastapi import APIRouter, HTTPException, Depends
 from supabase import Client
@@ -6,6 +6,7 @@ from app.core.supabase import get_supabase
 from app.schemas.equipment import (
     EquipmentCreate,
     EquipmentUpdate,
+    EquipmentBatchUpdate,
     SplitRequest,
     SplitResponse,
     EquipmentOut,
@@ -67,6 +68,7 @@ def transform_scan_to_equipment(scan: dict) -> dict:
         "verified": scan.get("verified", False),
         "note": scan.get("note", ""),
         "scan_date": scan.get("scan_date"),
+        "group_id": str(scan["group_id"]) if scan.get("group_id") else None,
     }
 
 
@@ -263,6 +265,88 @@ def get_equipment(site_id: str, equipment_id: str, db: Client = Depends(get_supa
     if resp.data.get("equipment_types"):
         eq["equipment_type"] = resp.data["equipment_types"]["code"]
     return eq
+
+
+@router.patch("/batch")
+def update_equipment_batch(
+    body: List[EquipmentBatchUpdate],
+    db: Client = Depends(get_supabase),
+):
+    """여러 설비를 한 번에 업데이트 (위치, 크기)."""
+    if not body:
+        return []
+
+    results = []
+    for item in body:
+        update_data = {}
+
+        if item.centroid_x is not None:
+            update_data["centroid_x"] = item.centroid_x
+        if item.centroid_y is not None:
+            update_data["centroid_y"] = item.centroid_y
+        if item.centroid_z is not None:
+            update_data["centroid_z"] = item.centroid_z
+        if item.size_w is not None:
+            update_data["size_w"] = item.size_w
+        if item.size_h is not None:
+            update_data["size_h"] = item.size_h
+        if item.size_d is not None:
+            update_data["size_d"] = item.size_d
+        if item.verified is not None:
+            update_data["verified"] = item.verified
+
+        if update_data:
+            resp = (
+                db.table("equipment_scans")
+                .update(update_data)
+                .eq("scan_code", item.equipment_id)
+                .execute()
+            )
+            if resp.data:
+                results.append(transform_scan_to_equipment(resp.data[0]))
+
+    return results
+
+
+@router.patch("/bulk/verified")
+def bulk_update_verified(
+    verified: bool,
+    line_code: str | None = None,
+    db: Client = Depends(get_supabase),
+):
+    """전체 설비의 verified 상태를 일괄 변경."""
+    try:
+        if line_code:
+            # Get line_id first
+            line_resp = (
+                db.table("production_lines")
+                .select("id")
+                .eq("code", line_code)
+                .single()
+                .execute()
+            )
+            if not line_resp.data:
+                raise HTTPException(status_code=404, detail="라인을 찾을 수 없습니다.")
+
+            resp = (
+                db.table("equipment_scans")
+                .update({"verified": verified})
+                .eq("line_id", line_resp.data["id"])
+                .execute()
+            )
+        else:
+            resp = (
+                db.table("equipment_scans")
+                .update({"verified": verified})
+                .neq("id", "00000000-0000-0000-0000-000000000000")  # Update all
+                .execute()
+            )
+
+        return {"updated": len(resp.data) if resp.data else 0, "verified": verified}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"벌크 업데이트 실패: {str(e)}")
 
 
 @router.patch("/{equipment_id}")
