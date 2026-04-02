@@ -1,0 +1,68 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "backend: 서버 시작",
+      "type": "shell",
+      "command": ".venv/bin/uvicorn app.main:app --reload --port 8000",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "frontend: 개발 서버",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "backend: 패키지 설치",
+      "type": "shell",
+      "command": "python -m venv .venv && .venv/bin/pip install -r requirements.txt",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "presentation": { "panel": "shared", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "frontend: 패키지 설치",
+      "type": "shell",
+      "command": "npm install",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "presentation": { "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "pipeline: 전처리 실행",
+      "type": "shell",
+      "command": ".venv/bin/python app/services/pipeline.py ${input:scanFile} ${input:outputDir} --site-id ${input:siteId}",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "db: Supabase 적재",
+      "type": "shell",
+      "command": ".venv/bin/python app/services/upload_to_supabase.py ${input:outputDir} ${input:siteId}",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "test: 백엔드 테스트",
+      "type": "shell",
+      "command": ".venv/bin/pytest tests/ -v",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": "test",
+      "presentation": { "panel": "shared", "reveal": "always" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    { "id": "scanFile",  "type": "promptString", "description": "스캔 파일 (.e57/.las/.ply)", "default": "data/sample.e57" },
+    { "id": "outputDir", "type": "promptString", "description": "결과 저장 디렉토리",         "default": "data/output" },
+    { "id": "siteId",    "type": "promptString", "description": "사이트 ID",                  "default": "JM_PCB_001" }
+  ]
+}

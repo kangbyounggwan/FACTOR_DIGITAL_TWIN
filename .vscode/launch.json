@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: FastAPI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--reload", "--port", "8000"],
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend"
+      },
+      "envFile": "${workspaceFolder}/backend/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Pipeline: LiDAR 전처리",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/app/services/pipeline.py",
+      "args": ["${input:scanFile}", "${input:outputDir}", "--site-id", "${input:siteId}"],
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Pipeline: Supabase 적재",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/app/services/upload_to_supabase.py",
+      "args": ["${input:outputDir}", "${input:siteId}"],
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    { "id": "scanFile",   "type": "promptString", "description": "스캔 파일 경로 (.e57/.las/.ply)", "default": "./data/sample.e57" },
+    { "id": "outputDir",  "type": "promptString", "description": "결과 저장 경로", "default": "./data/output" },
+    { "id": "siteId",     "type": "promptString", "description": "사이트 ID", "default": "JM_PCB_001" }
+  ]
+}

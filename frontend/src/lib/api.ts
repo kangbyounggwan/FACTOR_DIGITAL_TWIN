@@ -1,0 +1,533 @@
+import axios from 'axios'
+
+const api = axios.create({ baseURL: '/api' })
+
+export interface Equipment {
+  id: number
+  equipment_id: string
+  name?: string
+  site_id: string
+  line_code?: string
+  equipment_type: string
+  zone: string
+  scan_date: string
+  centroid_x: number
+  centroid_y: number
+  centroid_z: number
+  size_w: number
+  size_d: number
+  size_h: number
+  point_count: number
+  ply_url: string | null
+  verified: boolean
+  note: string
+}
+
+export interface SiteStats {
+  total: number
+  verified: number
+  pending: number
+  by_type: Record<string, number>
+}
+
+export interface EquipmentUpdate {
+  name?: string
+  equipment_type?: string
+  zone?: string
+  verified?: boolean
+  note?: string
+  // Position and size
+  centroid_x?: number
+  centroid_y?: number
+  centroid_z?: number
+  size_w?: number
+  size_d?: number
+  size_h?: number
+}
+
+// Pipeline progress tracking
+export interface JobProgress {
+  current_step: number      // 1-8, current step being executed
+  total_steps: number       // Always 8 for this pipeline
+  step_name: string         // Korean name of current step
+  percentage: number        // 0-100, overall completion percentage
+}
+
+export interface JobStatusResponse {
+  job_id: string
+  status: 'queued' | 'running' | 'done' | 'error'
+  progress?: JobProgress    // Present when status is 'running'
+  summary?: Record<string, any>  // Present when status is 'done'
+  message?: string          // Present when status is 'error'
+}
+
+// 설비 목록 (라인별)
+export const fetchEquipment = (siteId: string) =>
+  api.get<Equipment[]>(`/equipment/${siteId}`).then(r => r.data)
+
+// 설비 목록 (공장 전체)
+export const fetchFactoryEquipment = (factoryCode: string) =>
+  api.get<Equipment[]>(`/equipment/factories/${factoryCode}`).then(r => r.data)
+
+// 설비 업데이트
+export const updateEquipment = (equipmentId: string, body: EquipmentUpdate) =>
+  api.patch<Equipment>(`/equipment/${equipmentId}`, body).then(r => r.data)
+
+// 통계
+export const fetchStats = (siteId: string) =>
+  api.get<SiteStats>(`/equipment/${siteId}/stats/summary`).then(r => r.data)
+
+// 파이프라인 실행
+export const startPipeline = (file: File, siteId: string, voxelSize: number) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('site_id', siteId)
+  form.append('voxel_size', String(voxelSize))
+  return api.post<{ job_id: string; status: string }>('/pipeline/run', form).then(r => r.data)
+}
+
+// 파이프라인 상태
+export const fetchJobStatus = (jobId: string) =>
+  api.get<JobStatusResponse>(`/pipeline/status/${jobId}`).then(r => r.data)
+
+// Point Cloud Data
+export interface PointCloudData {
+  positions: number[][]
+  colors: number[][]
+  point_count: number
+}
+
+export const fetchEquipmentPoints = (equipmentId: string, lod: 'high' | 'medium' | 'low' = 'high') =>
+  api.get<PointCloudData>(`/equipment/${equipmentId}/points?lod=${lod}`).then(r => r.data)
+
+// Split Equipment
+export interface SplitRequest {
+  plane_point: [number, number, number]
+  plane_normal: [number, number, number]
+}
+
+export interface SplitResponse {
+  equipment_a: Equipment
+  equipment_b: Equipment
+  original_id: string
+}
+
+export const splitEquipment = (
+  equipmentId: string,
+  planePoint: [number, number, number],
+  planeNormal: [number, number, number]
+) =>
+  api.post<SplitResponse>(`/equipment/${equipmentId}/split`, {
+    plane_point: planePoint,
+    plane_normal: planeNormal,
+  }).then(r => r.data)
+
+// Update Equipment Points
+export interface PointsUpdateRequest {
+  exclude_indices?: number[]
+  include_indices?: number[]
+  source_equipment_id?: string
+}
+
+export interface PointsUpdateResponse {
+  equipment_id: string
+  point_count: number
+  centroid_x: number
+  centroid_y: number
+  centroid_z: number
+  size_w: number
+  size_h: number
+  size_d: number
+}
+
+export const updateEquipmentPoints = (equipmentId: string, request: PointsUpdateRequest) =>
+  api.patch<PointsUpdateResponse>(`/equipment/${equipmentId}/points`, request).then(r => r.data)
+
+// Company, Factory & Production Line
+export interface Company {
+  id: string
+  code: string
+  name: string
+  description: string | null
+  logo_url: string | null
+}
+
+export interface Factory {
+  id: string
+  code: string
+  name: string
+  address: string | null
+}
+
+export interface ProductionLine {
+  id: string
+  code: string
+  name: string
+  description: string | null
+  location: string | null
+  equipment_count: number
+}
+
+export const fetchCompanies = () =>
+  api.get<Company[]>('/companies/').then(r => r.data)
+
+export const fetchCompanyFactories = (companyCode: string) =>
+  api.get<Factory[]>(`/companies/${companyCode}/factories`).then(r => r.data)
+
+export const fetchFactories = () =>
+  api.get<Factory[]>('/factories/').then(r => r.data)
+
+export const fetchFactoryLines = (factoryCode: string) =>
+  api.get<ProductionLine[]>(`/factories/${factoryCode}/lines`).then(r => r.data)
+
+// Equipment Types
+export interface EquipmentType {
+  id: string
+  code: string
+  name: string
+  color_hex: string | null
+}
+
+export const fetchEquipmentTypes = () =>
+  api.get<EquipmentType[]>('/equipment-types/').then(r => r.data)
+
+export const ensureEquipmentType = (code: string) =>
+  api.get<EquipmentType>(`/equipment-types/ensure/${code}`).then(r => r.data)
+
+// =============================================================================
+// LAYOUT VERSIONING
+// =============================================================================
+
+export interface LayoutEquipment {
+  id: string
+  equipment_id: string
+  centroid_x: number
+  centroid_y: number
+  centroid_z: number
+  size_w: number
+  size_h: number
+  size_d: number
+  rotation_x: number
+  rotation_y: number
+  rotation_z: number
+}
+
+export interface Layout {
+  id: string
+  factory_id: string
+  name: string
+  description: string | null
+  is_active: boolean
+  equipment_count: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  // 공장 바닥 설정
+  floor_x: number | null
+  floor_y: number | null
+  floor_width: number | null
+  floor_height: number | null
+  // 배경 이미지 설정
+  background_image: string | null
+  background_opacity: number | null
+}
+
+export interface LayoutDetail extends Layout {
+  equipment: LayoutEquipment[]
+}
+
+export interface LayoutCreate {
+  factory_id: string
+  name: string
+  description?: string | null
+  equipment?: LayoutEquipmentCreate[]
+  is_active?: boolean
+  // 공장 바닥 설정
+  floor_x?: number | null
+  floor_y?: number | null
+  floor_width?: number | null
+  floor_height?: number | null
+  // 배경 이미지 설정
+  background_image?: string | null
+  background_opacity?: number | null
+}
+
+export interface LayoutEquipmentCreate {
+  equipment_id: string
+  centroid_x: number
+  centroid_y: number
+  centroid_z: number
+  size_w: number
+  size_h: number
+  size_d: number
+  rotation_x?: number
+  rotation_y?: number
+  rotation_z?: number
+}
+
+export interface LayoutActivateResponse {
+  activated_id: string
+  deactivated_ids: string[]
+}
+
+export interface LayoutCompareResponse {
+  added: string[]
+  removed: string[]
+  moved: string[]
+}
+
+// Layout API functions
+export const fetchLayouts = (factoryId?: string) =>
+  api.get<Layout[]>('/layouts/', { params: factoryId ? { factory_id: factoryId } : {} }).then(r => r.data)
+
+export const fetchLayout = (layoutId: string) =>
+  api.get<LayoutDetail>(`/layouts/${layoutId}`).then(r => r.data)
+
+export const fetchActiveLayout = (factoryId: string) =>
+  api.get<LayoutDetail | null>(`/layouts/factory/${factoryId}/active`).then(r => r.data)
+
+export const createLayout = (data: LayoutCreate) =>
+  api.post<LayoutDetail>('/layouts/', data).then(r => r.data)
+
+export const updateLayout = (layoutId: string, data: {
+  name?: string
+  description?: string
+  floor_x?: number | null
+  floor_y?: number | null
+  floor_width?: number | null
+  floor_height?: number | null
+  background_image?: string | null
+  background_opacity?: number | null
+}) =>
+  api.patch<Layout>(`/layouts/${layoutId}`, data).then(r => r.data)
+
+export const deleteLayout = (layoutId: string) =>
+  api.delete(`/layouts/${layoutId}`)
+
+export const activateLayout = (layoutId: string) =>
+  api.post<LayoutActivateResponse>(`/layouts/${layoutId}/activate`).then(r => r.data)
+
+export const cloneLayout = (layoutId: string, newName: string, newDescription?: string) =>
+  api.post<LayoutDetail>(`/layouts/${layoutId}/clone`, {
+    new_name: newName,
+    new_description: newDescription,
+  }).then(r => r.data)
+
+export const compareLayouts = (layoutAId: string, layoutBId: string) =>
+  api.get<LayoutCompareResponse>(`/layouts/compare/${layoutAId}/${layoutBId}`).then(r => r.data)
+
+export const saveLayoutFromViewer = (
+  factoryId: string,
+  name: string,
+  equipment: LayoutEquipmentCreate[],
+  description?: string,
+  setActive?: boolean,
+  floorBounds?: { x: number; y: number; width: number; height: number } | null,
+  backgroundImage?: string | null,
+  backgroundOpacity?: number | null
+) =>
+  api.post<LayoutDetail>('/layouts/save-from-viewer', {
+    factory_id: factoryId,
+    name,
+    description,
+    equipment,
+    set_active: setActive ?? false,
+    floor_x: floorBounds?.x ?? null,
+    floor_y: floorBounds?.y ?? null,
+    floor_width: floorBounds?.width ?? null,
+    floor_height: floorBounds?.height ?? null,
+    background_image: backgroundImage ?? null,
+    background_opacity: backgroundOpacity ?? 0.5,
+  }).then(r => r.data)
+
+export const updateLayoutEquipment = (layoutId: string, equipment: LayoutEquipmentCreate[]) =>
+  api.put<LayoutDetail>(`/layouts/${layoutId}/equipment`, equipment).then(r => r.data)
+
+// =============================================================================
+// CRUD OPERATIONS (Companies, Factories, Lines)
+// =============================================================================
+
+export interface CompanyCreate {
+  code: string
+  name: string
+  description?: string | null
+  logo_url?: string | null
+}
+
+export interface CompanyUpdate {
+  name?: string
+  description?: string | null
+  logo_url?: string | null
+  is_active?: boolean
+}
+
+export interface CompanyDeleteInfo {
+  company_id: string
+  company_name: string
+  factory_count: number
+  line_count: number
+  equipment_count: number
+}
+
+export interface FactoryFull {
+  id: string
+  company_id: string
+  code: string
+  name: string
+  address: string | null
+  is_active: boolean
+  company_name: string | null
+}
+
+export interface FactoryCreate {
+  company_id: string
+  code: string
+  name: string
+  address?: string | null
+}
+
+export interface FactoryUpdate {
+  name?: string
+  address?: string | null
+  is_active?: boolean
+}
+
+export interface FactoryDeleteInfo {
+  factory_id: string
+  factory_name: string
+  line_count: number
+  equipment_count: number
+  layout_count: number
+}
+
+export interface LineFull {
+  id: string
+  factory_id: string
+  code: string
+  name: string
+  description: string | null
+  building: string | null
+  floor: string | null
+  area: string | null
+  sort_order: number
+  is_active: boolean
+  factory_name: string | null
+  factory_code: string | null
+}
+
+export interface LineCreate {
+  factory_id: string
+  code: string
+  name: string
+  description?: string | null
+  building?: string | null
+  floor?: string | null
+  area?: string | null
+  sort_order?: number
+}
+
+export interface LineUpdate {
+  name?: string
+  description?: string | null
+  building?: string | null
+  floor?: string | null
+  area?: string | null
+  sort_order?: number
+  is_active?: boolean
+}
+
+export interface LineDeleteInfo {
+  line_id: string
+  line_name: string
+  equipment_count: number
+}
+
+// Company CRUD
+export const createCompany = (data: CompanyCreate) =>
+  api.post<Company>('/companies/', data).then(r => r.data)
+
+export const getCompanyById = (companyId: string) =>
+  api.get<Company>(`/companies/${companyId}/detail`).then(r => r.data)
+
+export const updateCompany = (companyId: string, data: CompanyUpdate) =>
+  api.put<Company>(`/companies/${companyId}`, data).then(r => r.data)
+
+export const deleteCompany = (companyId: string) =>
+  api.delete(`/companies/${companyId}`)
+
+export const getCompanyDeleteInfo = (companyId: string) =>
+  api.get<CompanyDeleteInfo>(`/companies/${companyId}/delete-info`).then(r => r.data)
+
+// Factory CRUD
+export const createFactory = (data: FactoryCreate) =>
+  api.post<FactoryFull>('/factories/', data).then(r => r.data)
+
+export const getFactoryById = (factoryId: string) =>
+  api.get<FactoryFull>(`/factories/${factoryId}/detail`).then(r => r.data)
+
+export const updateFactory = (factoryId: string, data: FactoryUpdate) =>
+  api.put<FactoryFull>(`/factories/${factoryId}`, data).then(r => r.data)
+
+export const deleteFactory = (factoryId: string) =>
+  api.delete(`/factories/${factoryId}`)
+
+export const getFactoryDeleteInfo = (factoryId: string) =>
+  api.get<FactoryDeleteInfo>(`/factories/${factoryId}/delete-info`).then(r => r.data)
+
+// Line CRUD
+export const fetchLines = (factoryId?: string) =>
+  api.get<LineFull[]>('/lines/', { params: factoryId ? { factory_id: factoryId } : {} }).then(r => r.data)
+
+export const getLineById = (lineId: string) =>
+  api.get<LineFull>(`/lines/${lineId}`).then(r => r.data)
+
+export const createLine = (data: LineCreate) =>
+  api.post<LineFull>('/lines/', data).then(r => r.data)
+
+export const updateLine = (lineId: string, data: LineUpdate) =>
+  api.put<LineFull>(`/lines/${lineId}`, data).then(r => r.data)
+
+export const deleteLine = (lineId: string) =>
+  api.delete(`/lines/${lineId}`)
+
+export const getLineDeleteInfo = (lineId: string) =>
+  api.get<LineDeleteInfo>(`/lines/${lineId}/delete-info`).then(r => r.data)
+
+// =============================================================================
+// EQUIPMENT CRUD
+// =============================================================================
+
+export interface EquipmentFull extends Equipment {
+  line_code: string
+}
+
+export interface EquipmentCreate {
+  line_id: string
+  scan_code: string
+  name?: string
+  equipment_type?: string
+  zone?: string
+  centroid_x?: number
+  centroid_y?: number
+  centroid_z?: number
+  size_w?: number
+  size_h?: number
+  size_d?: number
+  note?: string
+}
+
+export interface EquipmentDeleteInfo {
+  equipment_id: string
+  equipment_code: string
+  has_layout_references: boolean
+  layout_count: number
+}
+
+export const createEquipment = (data: EquipmentCreate) =>
+  api.post<Equipment>('/equipment/', data).then(r => r.data)
+
+export const deleteEquipment = (equipmentId: string) =>
+  api.delete(`/equipment/${equipmentId}`)
+
+export const fetchLineEquipment = (lineCode: string) =>
+  api.get<Equipment[]>(`/equipment/lines/${lineCode}`).then(r => r.data)
