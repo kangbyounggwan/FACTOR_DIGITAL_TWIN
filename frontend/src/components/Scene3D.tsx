@@ -4,26 +4,7 @@ import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from '@react-three/dr
 import * as THREE from 'three'
 import { Equipment, EquipmentGroup } from '@/lib/api'
 import PointCloudView from './PointCloudView'
-
-// 그룹 타입별 색상
-const GROUP_COLORS: Record<string, number> = {
-  BRIDGE: 0x00ffff,   // 시안 (존 연결)
-  CLUSTER: 0xff00ff,  // 마젠타 (동일 기능)
-  FLOW: 0xffff00,     // 노랑 (공정 흐름)
-  OTHER: 0xff8800,    // 주황 (기타)
-}
-
-const EQ_HEX: Record<string, number> = {
-  SMT_LINE:       0x00FF88,
-  REFLOW_OVEN:    0xFF6633,
-  AOI_MACHINE:    0x66AAFF,
-  SCREEN_PRINTER: 0xFFCC00,
-  PICK_AND_PLACE: 0x00FF88,
-  CONVEYOR:       0x99FF33,
-  CONTROL_PANEL:  0xCCCCCC,
-  STORAGE_RACK:   0xCCCCCC,
-  UNKNOWN:        0xAAAAAA,
-}
+import { getEquipmentThreeHex, getGroupThreeHex } from '@/lib/colors'
 
 // Component to trigger re-render when props change (for demand frameloop)
 function InvalidateOnChange({ deps }: { deps: any[] }) {
@@ -47,7 +28,7 @@ function EquipmentBox({ eq, isSelected, isDimmed, onClick }: BoxProps) {
   const [hovered, setHovered] = useState(false)
   const { invalidate } = useThree()
 
-  const color = EQ_HEX[eq.equipment_type] ?? 0x3a3f3a
+  const color = getEquipmentThreeHex(eq.equipment_type)
   const pos: [number, number, number] = [eq.centroid_x, eq.size_h / 2, eq.centroid_z]
   const size: [number, number, number] = [eq.size_w, eq.size_h, eq.size_d]
 
@@ -159,7 +140,7 @@ function GroupBoundingBox({ group, equipment, isSelected, onClick }: GroupBoxPro
 
   if (!bounds) return null
 
-  const color = GROUP_COLORS[group.group_type] ?? GROUP_COLORS.OTHER
+  const color = getGroupThreeHex(group.group_type)
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()

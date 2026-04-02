@@ -46,21 +46,6 @@ export interface EquipmentUpdate {
   size_h?: number
 }
 
-// Pipeline progress tracking
-export interface JobProgress {
-  current_step: number      // 1-8, current step being executed
-  total_steps: number       // Always 8 for this pipeline
-  step_name: string         // Korean name of current step
-  percentage: number        // 0-100, overall completion percentage
-}
-
-export interface JobStatusResponse {
-  job_id: string
-  status: 'queued' | 'running' | 'done' | 'error'
-  progress?: JobProgress    // Present when status is 'running'
-  summary?: Record<string, any>  // Present when status is 'done'
-  message?: string          // Present when status is 'error'
-}
 
 // 설비 목록 (라인별)
 export const fetchEquipment = (siteId: string) =>
@@ -92,18 +77,6 @@ export const updateEquipmentBatch = (updates: EquipmentBatchUpdate[]) =>
 export const fetchStats = (siteId: string) =>
   api.get<SiteStats>(`/equipment/${siteId}/stats/summary`).then(r => r.data)
 
-// 파이프라인 실행
-export const startPipeline = (file: File, siteId: string, voxelSize: number) => {
-  const form = new FormData()
-  form.append('file', file)
-  form.append('site_id', siteId)
-  form.append('voxel_size', String(voxelSize))
-  return api.post<{ job_id: string; status: string }>('/pipeline/run', form).then(r => r.data)
-}
-
-// 파이프라인 상태
-export const fetchJobStatus = (jobId: string) =>
-  api.get<JobStatusResponse>(`/pipeline/status/${jobId}`).then(r => r.data)
 
 // Point Cloud Data
 export interface PointCloudData {
@@ -115,48 +88,6 @@ export interface PointCloudData {
 export const fetchEquipmentPoints = (equipmentId: string, lod: 'high' | 'medium' | 'low' = 'high') =>
   api.get<PointCloudData>(`/equipment/${equipmentId}/points?lod=${lod}`).then(r => r.data)
 
-// Split Equipment
-export interface SplitRequest {
-  plane_point: [number, number, number]
-  plane_normal: [number, number, number]
-}
-
-export interface SplitResponse {
-  equipment_a: Equipment
-  equipment_b: Equipment
-  original_id: string
-}
-
-export const splitEquipment = (
-  equipmentId: string,
-  planePoint: [number, number, number],
-  planeNormal: [number, number, number]
-) =>
-  api.post<SplitResponse>(`/equipment/${equipmentId}/split`, {
-    plane_point: planePoint,
-    plane_normal: planeNormal,
-  }).then(r => r.data)
-
-// Update Equipment Points
-export interface PointsUpdateRequest {
-  exclude_indices?: number[]
-  include_indices?: number[]
-  source_equipment_id?: string
-}
-
-export interface PointsUpdateResponse {
-  equipment_id: string
-  point_count: number
-  centroid_x: number
-  centroid_y: number
-  centroid_z: number
-  size_w: number
-  size_h: number
-  size_d: number
-}
-
-export const updateEquipmentPoints = (equipmentId: string, request: PointsUpdateRequest) =>
-  api.patch<PointsUpdateResponse>(`/equipment/${equipmentId}/points`, request).then(r => r.data)
 
 // Company, Factory & Production Line
 export interface Company {
@@ -512,10 +443,6 @@ export const getLineDeleteInfo = (lineId: string) =>
 // EQUIPMENT CRUD
 // =============================================================================
 
-export interface EquipmentFull extends Equipment {
-  line_code: string
-}
-
 export interface EquipmentCreate {
   line_id: string
   scan_code: string
@@ -529,13 +456,6 @@ export interface EquipmentCreate {
   size_h?: number
   size_d?: number
   note?: string
-}
-
-export interface EquipmentDeleteInfo {
-  equipment_id: string
-  equipment_code: string
-  has_layout_references: boolean
-  layout_count: number
 }
 
 export const createEquipment = (data: EquipmentCreate) =>
@@ -577,12 +497,6 @@ export interface EquipmentGroupCreate {
   equipment_ids?: string[]
 }
 
-export interface EquipmentGroupUpdate {
-  name?: string
-  group_type?: string
-  description?: string
-}
-
 // Equipment Group API functions
 export const fetchEquipmentGroups = (lineCode: string) =>
   api.get<EquipmentGroup[]>(`/equipment-groups/line/${lineCode}`).then(r => r.data)
@@ -590,20 +504,5 @@ export const fetchEquipmentGroups = (lineCode: string) =>
 export const fetchFactoryEquipmentGroups = (factoryCode: string) =>
   api.get<EquipmentGroup[]>(`/equipment-groups/factory/${factoryCode}`).then(r => r.data)
 
-export const fetchEquipmentGroup = (groupId: string) =>
-  api.get<EquipmentGroup>(`/equipment-groups/${groupId}`).then(r => r.data)
-
 export const createEquipmentGroup = (data: EquipmentGroupCreate) =>
   api.post<EquipmentGroup>('/equipment-groups/', data).then(r => r.data)
-
-export const updateEquipmentGroup = (groupId: string, data: EquipmentGroupUpdate) =>
-  api.patch<EquipmentGroup>(`/equipment-groups/${groupId}`, data).then(r => r.data)
-
-export const addEquipmentToGroup = (groupId: string, equipmentIds: string[]) =>
-  api.post<EquipmentGroup>(`/equipment-groups/${groupId}/members`, { equipment_ids: equipmentIds }).then(r => r.data)
-
-export const removeEquipmentFromGroup = (groupId: string, equipmentIds: string[]) =>
-  api.delete<EquipmentGroup>(`/equipment-groups/${groupId}/members`, { data: { equipment_ids: equipmentIds } }).then(r => r.data)
-
-export const deleteEquipmentGroup = (groupId: string) =>
-  api.delete(`/equipment-groups/${groupId}`)

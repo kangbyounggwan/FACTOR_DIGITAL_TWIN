@@ -4,16 +4,13 @@ import {
   Layout,
   LayoutDetail,
   LayoutEquipmentCreate,
-  LayoutCompareResponse,
   fetchLayouts,
-  fetchLayout,
   fetchActiveLayout,
   createLayout,
   updateLayout,
   deleteLayout,
   activateLayout,
   cloneLayout,
-  compareLayouts,
   saveLayoutFromViewer,
   updateLayoutEquipment,
 } from '@/lib/api'
@@ -37,26 +34,6 @@ export function useLayouts(factoryId: string | null) {
   }, [queryClient, factoryId])
 
   return { layouts, loading, error: error as Error | null, reload }
-}
-
-/**
- * Hook for managing a single layout's details
- */
-export function useLayout(layoutId: string | null) {
-  const queryClient = useQueryClient()
-
-  const { data: layout = null, isLoading: loading, error } = useQuery({
-    queryKey: ['layout', layoutId],
-    queryFn: () => fetchLayout(layoutId!),
-    enabled: !!layoutId,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const reload = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['layout', layoutId] })
-  }, [queryClient, layoutId])
-
-  return { layout, loading, error: error as Error | null, reload }
 }
 
 /**
@@ -255,20 +232,4 @@ export function useLayoutMutations() {
     saveFromViewer,
     updateEquipment,
   }
-}
-
-/**
- * Hook for comparing two layouts
- */
-export function useLayoutComparison(layoutAId: string | null, layoutBId: string | null) {
-  const { data: comparison = null, isLoading: loading, error, refetch } = useQuery({
-    queryKey: ['layout-comparison', layoutAId, layoutBId],
-    queryFn: () => compareLayouts(layoutAId!, layoutBId!),
-    enabled: !!(layoutAId && layoutBId),
-    staleTime: 2 * 60 * 1000, // 비교는 2분 캐시
-  })
-
-  const reload = useCallback(() => refetch(), [refetch])
-
-  return { comparison, loading, error: error as Error | null, reload }
 }

@@ -1,38 +1,6 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Equipment, EquipmentGroup } from '@/lib/api'
-
-// 그룹 타입별 색상
-const GROUP_COLORS: Record<string, string> = {
-  BRIDGE: '#00ffff',   // 시안 (존 연결)
-  CLUSTER: '#ff00ff',  // 마젠타 (동일 기능)
-  FLOW: '#ffff00',     // 노랑 (공정 흐름)
-  OTHER: '#ff8800',    // 주황 (기타)
-}
-
-// 설비 타입별 색상
-const TYPE_COLORS: Record<string, string> = {
-  SMT_LINE: '#059669',
-  REFLOW_OVEN: '#ea580c',
-  AOI_MACHINE: '#6366f1',
-  SCREEN_PRINTER: '#d97706',
-  PICK_AND_PLACE: '#059669',
-  CONVEYOR: '#65a30d',
-  CONTROL_PANEL: '#52525b',
-  STORAGE_RACK: '#52525b',
-  CNC: '#2563eb',
-  MCT: '#0284c7',
-  ROBOT: '#9333ea',
-  INSP: '#0d9488',
-  WELD: '#dc2626',
-  PRESS: '#e11d48',
-  INJECT: '#c026d3',
-  PACK: '#06b6d4',
-  ASSY: '#7c3aed',
-  AGV: '#16a34a',
-  CONV: '#65a30d',
-  OTHER: '#6b7280',
-  UNKNOWN: '#3f3f46',
-}
+import { getEquipmentHex, getGroupHex } from '@/lib/colors'
 
 export interface FloorBounds {
   x: number
@@ -692,7 +660,7 @@ export default function LayoutCanvas({
           const members = equipment.filter(eq => group.member_ids.includes(eq.equipment_id))
           if (members.length < 2) return null
 
-          const color = GROUP_COLORS[group.group_type] ?? GROUP_COLORS.OTHER
+          const color = getGroupHex(group.group_type)
 
           // 바운딩 박스 계산
           const minX = Math.min(...members.map(m => m.centroid_x - m.size_w / 2))
@@ -775,7 +743,7 @@ export default function LayoutCanvas({
         {equipment.map(eq => {
           const isSelected = eq.equipment_id === selectedId
           const isMultiSelected = multiSelectedIds.includes(eq.equipment_id)
-          const color = TYPE_COLORS[eq.equipment_type] ?? TYPE_COLORS.UNKNOWN
+          const color = getEquipmentHex(eq.equipment_type)
 
           const cx = eq.centroid_x
           const cy = eq.centroid_z

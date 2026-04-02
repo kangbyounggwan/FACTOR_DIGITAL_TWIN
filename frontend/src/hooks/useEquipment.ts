@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchEquipment, fetchFactoryEquipment, fetchStats, updateEquipment, fetchEquipmentGroups, fetchFactoryEquipmentGroups, Equipment, EquipmentUpdate, SiteStats, EquipmentGroup } from '@/lib/api'
+import { fetchFactoryEquipment, updateEquipment, fetchEquipmentGroups, fetchFactoryEquipmentGroups, Equipment, EquipmentUpdate, SiteStats, EquipmentGroup } from '@/lib/api'
 
 // 로컬 목 데이터 (API 연결 전 개발용)
 const MOCK: Equipment[] = [
@@ -19,45 +19,6 @@ const MOCK: Equipment[] = [
 ]
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true' || !import.meta.env.VITE_API_URL
-
-export function useEquipment(siteId: string) {
-  const [equipment, setEquipment] = useState<Equipment[]>([])
-  const [stats, setStats]         = useState<SiteStats | null>(null)
-  const [loading, setLoading]     = useState(true)
-  const [selected, setSelected]   = useState<Equipment | null>(null)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      if (USE_MOCK) {
-        setEquipment(MOCK.filter(e => e.site_id === siteId))
-        const v = MOCK.filter(e => e.verified && e.site_id === siteId).length
-        setStats({ total: MOCK.length, verified: v, pending: MOCK.length - v, by_type: {} })
-      } else {
-        const [eq, st] = await Promise.all([fetchEquipment(siteId), fetchStats(siteId)])
-        setEquipment(eq)
-        setStats(st)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }, [siteId])
-
-  useEffect(() => { load() }, [load])
-
-  const save = useCallback(async (id: string, body: EquipmentUpdate) => {
-    if (USE_MOCK) {
-      setEquipment(prev =>
-        prev.map(e => e.equipment_id === id ? { ...e, ...body } : e)
-      )
-      return
-    }
-    await updateEquipment(id, body)
-    await load()
-  }, [load])
-
-  return { equipment, stats, loading, selected, setSelected, save, reload: load }
-}
 
 export function useFactoryEquipment(factoryCode: string) {
   const queryClient = useQueryClient()

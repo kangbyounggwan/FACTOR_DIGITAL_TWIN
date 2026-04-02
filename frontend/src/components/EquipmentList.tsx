@@ -6,39 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-// 설비 타입별 색상
-const TYPE_COLORS: Record<string, string> = {
-  SMT_LINE:       'bg-emerald-600',
-  REFLOW_OVEN:    'bg-orange-600',
-  AOI_MACHINE:    'bg-indigo-500',
-  SCREEN_PRINTER: 'bg-amber-600',
-  PICK_AND_PLACE: 'bg-emerald-600',
-  CONVEYOR:       'bg-lime-700',
-  CONTROL_PANEL:  'bg-zinc-600',
-  STORAGE_RACK:   'bg-zinc-600',
-  CNC:            'bg-blue-600',
-  MCT:            'bg-sky-600',
-  ROBOT:          'bg-purple-600',
-  INSP:           'bg-teal-600',
-  WELD:           'bg-red-600',
-  PRESS:          'bg-rose-600',
-  INJECT:         'bg-fuchsia-600',
-  PACK:           'bg-cyan-600',
-  ASSY:           'bg-violet-600',
-  AGV:            'bg-green-600',
-  CONV:           'bg-lime-700',
-  OTHER:          'bg-gray-600',
-  UNKNOWN:        'bg-zinc-700',
-}
-
-// 그룹 타입별 색상
-const GROUP_TYPE_COLORS: Record<string, string> = {
-  BRIDGE: 'bg-cyan-500',
-  CLUSTER: 'bg-fuchsia-500',
-  FLOW: 'bg-yellow-500',
-  OTHER: 'bg-orange-500',
-}
+import { getEquipmentTailwind, getGroupTailwind } from '@/lib/colors'
 
 interface Props {
   equipment: Equipment[]
@@ -180,7 +148,7 @@ export default function EquipmentList({ equipment, selectedId, onSelect, lineMap
               </div>
               {groups.map(group => {
                 const isSelected = group.id === selectedGroupId
-                const typeColor = GROUP_TYPE_COLORS[group.group_type] ?? GROUP_TYPE_COLORS.OTHER
+                const typeColor = getGroupTailwind(group.group_type)
                 const memberEquipment = equipment.filter(eq => group.member_ids.includes(eq.equipment_id))
 
                 return (
@@ -267,7 +235,7 @@ export default function EquipmentList({ equipment, selectedId, onSelect, lineMap
                     {zoneEquipment.map(eq => {
                       const isSelected = eq.equipment_id === selectedId
                       const shortNum = eq.equipment_id.split('_').pop()
-                      const typeColor = TYPE_COLORS[eq.equipment_type] ?? TYPE_COLORS.UNKNOWN
+                      const typeColor = getEquipmentTailwind(eq.equipment_type)
                       const belongsToGroup = equipmentToGroup.get(eq.equipment_id)
                       const isGroupSelected = belongsToGroup?.id === selectedGroupId
 

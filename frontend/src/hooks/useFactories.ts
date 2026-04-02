@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Company, Factory, ProductionLine, fetchCompanies, fetchCompanyFactories, fetchFactories, fetchFactoryLines } from '@/lib/api'
+import { Company, Factory, ProductionLine, fetchCompanies, fetchCompanyFactories, fetchFactoryLines } from '@/lib/api'
 
 // 회사 목록 - 페이지 전환해도 캐시 유지
 export function useCompanies() {
@@ -29,23 +29,6 @@ export function useCompanyFactories(companyCode: string | null) {
   })
 
   return { factories, loading, error: error as Error | null }
-}
-
-// 전체 공장 목록
-export function useFactories() {
-  const queryClient = useQueryClient()
-
-  const { data: factories = [], isLoading: loading, error, refetch } = useQuery({
-    queryKey: ['factories'],
-    queryFn: fetchFactories,
-    staleTime: 10 * 60 * 1000,
-  })
-
-  const reload = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['factories'] })
-  }, [queryClient])
-
-  return { factories, loading, error: error as Error | null, reload }
 }
 
 // 공장별 라인 목록
