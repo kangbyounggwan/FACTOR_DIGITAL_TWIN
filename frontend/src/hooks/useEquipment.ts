@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchFactoryEquipment, updateEquipment, fetchEquipmentGroups, fetchFactoryEquipmentGroups, Equipment, EquipmentUpdate, SiteStats, EquipmentGroup } from '@/lib/api'
+import { fetchFactoryEquipment, updateEquipment, fetchEquipmentGroups, fetchFactoryEquipmentGroups, fetchFlowConnections, Equipment, EquipmentUpdate, SiteStats, EquipmentGroup, FlowConnection } from '@/lib/api'
 
 // 로컬 목 데이터 (API 연결 전 개발용)
 const MOCK: Equipment[] = [
@@ -89,4 +89,20 @@ export function useEquipmentGroups(lineCode: string | null, factoryCode?: string
   const reload = useCallback(() => refetch(), [refetch])
 
   return { groups, loading, reload }
+}
+
+// Flow Connections hook
+export function useFlowConnections(factoryCode: string | null) {
+  const { data: connections = [], isLoading: loading, refetch } = useQuery({
+    queryKey: ['flow-connections', factoryCode],
+    queryFn: async () => {
+      if (!factoryCode) return []
+      return fetchFlowConnections(factoryCode)
+    },
+    enabled: !!factoryCode,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const reload = useCallback(() => refetch(), [refetch])
+  return { connections, loading, reload }
 }

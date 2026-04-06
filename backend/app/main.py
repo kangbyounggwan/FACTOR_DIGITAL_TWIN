@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from app.api import equipment, equipment_groups, pipeline, sites, factories, companies, equipment_types, layouts, lines, zones
+from app.api import equipment, equipment_groups, flow_connections, pipeline, sites, factories, companies, equipment_types, layouts, lines, zones
 from app.core.config import settings
 
 API_VERSION = "0.2.3"
@@ -47,6 +47,7 @@ app.include_router(layouts.router,   prefix="/api/layouts",   tags=["layouts"])
 app.include_router(lines.router,     prefix="/api/lines",     tags=["lines"])
 app.include_router(zones.router,     prefix="/api/zones",     tags=["zones"])
 app.include_router(equipment_groups.router, prefix="/api/equipment-groups", tags=["equipment-groups"])
+app.include_router(flow_connections.router, prefix="/api/flow-connections", tags=["flow-connections"])
 
 @app.get("/health")
 def health():

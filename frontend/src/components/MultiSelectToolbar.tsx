@@ -17,8 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Equipment, EquipmentUpdate, createEquipmentGroup } from '@/lib/api'
-import { X, Grid3X3, MoveHorizontal, MoveVertical, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal, Link2 } from 'lucide-react'
+import { Equipment, EquipmentUpdate, FlowConnection, createEquipmentGroup, createFlowConnection, deleteFlowConnection } from '@/lib/api'
+import { X, Grid3X3, MoveHorizontal, MoveVertical, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal, Link2, ArrowRight, Trash2 } from 'lucide-react'
 import { AlignmentOption } from './AlignmentDialog'
 import { toast } from 'sonner'
 
@@ -30,6 +30,9 @@ interface MultiSelectToolbarProps {
   onBatchUpdate?: (equipmentIds: string[], updates: EquipmentUpdate) => void
   lineCode?: string  // 그룹 생성 시 필요
   onGroupCreated?: () => void  // 그룹 생성 후 콜백
+  factoryId?: string  // 연결 생성 시 필요
+  flowConnections?: FlowConnection[]  // 기존 연결 (삭제용)
+  onFlowConnectionChanged?: () => void  // 연결 생성/삭제 후 콜백
 }
 
 export function MultiSelectToolbar({
@@ -40,6 +43,9 @@ export function MultiSelectToolbar({
   onBatchUpdate,
   lineCode,
   onGroupCreated,
+  factoryId,
+  flowConnections = [],
+  onFlowConnectionChanged,
 }: MultiSelectToolbarProps) {
   const [spacing, setSpacing] = useState<string>('0')
   const [selectedZone, setSelectedZone] = useState<string>('_selection')
@@ -51,6 +57,14 @@ export function MultiSelectToolbar({
   const [groupName, setGroupName] = useState('')
   const [groupType, setGroupType] = useState('BRIDGE')
   const [creatingGroup, setCreatingGroup] = useState(false)
+
+  // 연결 생성 다이얼로그 상태
+  const [connectionDialogOpen, setConnectionDialogOpen] = useState(false)
+  const [connectionName, setConnectionName] = useState('')
+  const [connectionColor, setConnectionColor] = useState('#ff8800')
+  const [connectionLineStyle, setConnectionLineStyle] = useState('solid')
+  const [connectionReversed, setConnectionReversed] = useState(false)
+  const [creatingConnection, setCreatingConnection] = useState(false)
 
   // 선택된 설비 목록
   const selectedEquipment = useMemo(() => {
@@ -170,6 +184,60 @@ export function MultiSelectToolbar({
       toast.error('그룹 생성 실패')
     } finally {
       setCreatingGroup(false)
+    }
+  }
+
+  // 선택된 2개 설비 간 기존 연결 확인
+  const existingConnection = useMemo(() => {
+    if (currentEquipment.length !== 2) return null
+    const [a, b] = currentEquipment
+    return flowConnections.find(fc =>
+      (fc.source_equipment_id === a.equipment_id && fc.target_equipment_id === b.equipment_id) ||
+      (fc.source_equipment_id === b.equipment_id && fc.target_equipment_id === a.equipment_id)
+    ) ?? null
+  }, [currentEquipment, flowConnections])
+
+  // 연결 생성 핸들러
+  const handleCreateConnection = async () => {
+    if (!factoryId || currentEquipment.length !== 2) return
+
+    const [a, b] = currentEquipment
+    const sourceId = connectionReversed ? b.equipment_id : a.equipment_id
+    const targetId = connectionReversed ? a.equipment_id : b.equipment_id
+    const name = connectionName.trim() || `${sourceId.split('_').pop()} → ${targetId.split('_').pop()}`
+
+    setCreatingConnection(true)
+    try {
+      await createFlowConnection({
+        factory_id: factoryId,
+        name,
+        source_equipment_id: sourceId,
+        target_equipment_id: targetId,
+        color: connectionColor,
+        line_style: connectionLineStyle,
+      })
+      toast.success(`연결 "${name}" 생성 완료`)
+      setConnectionDialogOpen(false)
+      setConnectionName('')
+      setConnectionReversed(false)
+      onFlowConnectionChanged?.()
+    } catch (error) {
+      console.error('Failed to create flow connection:', error)
+      toast.error('연결 생성 실패')
+    } finally {
+      setCreatingConnection(false)
+    }
+  }
+
+  // 연결 삭제 핸들러
+  const handleDeleteConnection = async (connectionId: string) => {
+    try {
+      await deleteFlowConnection(connectionId)
+      toast.success('연결 삭제 완료')
+      onFlowConnectionChanged?.()
+    } catch (error) {
+      console.error('Failed to delete flow connection:', error)
+      toast.error('연결 삭제 실패')
     }
   }
 
@@ -435,6 +503,93 @@ export function MultiSelectToolbar({
           </div>
         )}
 
+        {/* 설비 연결 (Flow Connection) - 2개 선택 시 */}
+        {factoryId && currentEquipment.length === 2 && (
+          <div>
+            <Label className="text-xs text-muted-foreground mb-2 block">설비 연결</Label>
+            <div className="text-[10px] text-muted-foreground mb-1.5 font-mono">
+              {currentEquipment[0].equipment_id.split('_').pop()} → {currentEquipment[1].equipment_id.split('_').pop()}
+            </div>
+            {existingConnection ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 p-2 bg-muted/50 rounded text-xs">
+                  <div
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: existingConnection.color }}
+                  />
+                  <span className="truncate flex-1">{existingConnection.name}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                    onClick={() => handleDeleteConnection(existingConnection.id)}
+                    title="연결 삭제"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-8 text-xs"
+                  onClick={() => setConnectionDialogOpen(true)}
+                >
+                  <ArrowRight className="h-3 w-3 mr-1" />
+                  새 연결 추가
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="default"
+                size="sm"
+                className="w-full h-8 text-xs"
+                onClick={() => setConnectionDialogOpen(true)}
+              >
+                <ArrowRight className="h-3 w-3 mr-1" />
+                연결 생성
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* 선택된 설비의 기존 연결 목록 */}
+        {factoryId && currentEquipment.length >= 1 && (() => {
+          const selectedEqIds = new Set(currentEquipment.map(eq => eq.equipment_id))
+          const relatedConnections = flowConnections.filter(fc =>
+            selectedEqIds.has(fc.source_equipment_id) || selectedEqIds.has(fc.target_equipment_id)
+          )
+          if (relatedConnections.length === 0) return null
+          return (
+            <div>
+              <Label className="text-xs text-muted-foreground mb-2 block">
+                기존 연결 ({relatedConnections.length})
+              </Label>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {relatedConnections.map(fc => (
+                  <div key={fc.id} className="flex items-center gap-1.5 p-1.5 bg-muted/30 rounded text-[10px] font-mono">
+                    <div
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: fc.color }}
+                    />
+                    <span className="truncate flex-1">
+                      {fc.source_equipment_id.split('_').pop()} → {fc.target_equipment_id.split('_').pop()}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 w-5 p-0 text-destructive hover:text-destructive"
+                      onClick={() => handleDeleteConnection(fc.id)}
+                      title="삭제"
+                    >
+                      <Trash2 className="h-2.5 w-2.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* 선택 영역 정보 */}
         {currentBounds && (
           <div className="text-[10px] text-muted-foreground border-t pt-3 mt-3">
@@ -496,6 +651,92 @@ export function MultiSelectToolbar({
             </Button>
             <Button onClick={handleCreateGroup} disabled={creatingGroup}>
               {creatingGroup ? '생성 중...' : '그룹 생성'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 연결 생성 다이얼로그 */}
+      <Dialog open={connectionDialogOpen} onOpenChange={setConnectionDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>설비 연결 생성</DialogTitle>
+            <DialogDescription>
+              두 설비 간 흐름 연결(화살표)을 생성합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          {currentEquipment.length === 2 && (
+            <div className="space-y-4 py-4">
+              {/* 방향 표시 및 반전 */}
+              <div className="space-y-2">
+                <Label>연결 방향</Label>
+                <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
+                  <span className="font-mono text-sm font-medium flex-1 text-right truncate">
+                    {(connectionReversed ? currentEquipment[1] : currentEquipment[0]).equipment_id.split('_').pop()}
+                  </span>
+                  <ArrowRight className="h-4 w-4 flex-shrink-0 text-primary" />
+                  <span className="font-mono text-sm font-medium flex-1 truncate">
+                    {(connectionReversed ? currentEquipment[0] : currentEquipment[1]).equipment_id.split('_').pop()}
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => setConnectionReversed(!connectionReversed)}
+                >
+                  방향 반전
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="conn-name">연결 이름</Label>
+                <Input
+                  id="conn-name"
+                  value={connectionName}
+                  onChange={(e) => setConnectionName(e.target.value)}
+                  placeholder={`${(connectionReversed ? currentEquipment[1] : currentEquipment[0]).equipment_id.split('_').pop()} → ${(connectionReversed ? currentEquipment[0] : currentEquipment[1]).equipment_id.split('_').pop()}`}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="conn-color">색상</Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="conn-color"
+                      type="color"
+                      value={connectionColor}
+                      onChange={(e) => setConnectionColor(e.target.value)}
+                      className="w-8 h-8 rounded cursor-pointer border"
+                    />
+                    <span className="font-mono text-xs text-muted-foreground">{connectionColor}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>선 스타일</Label>
+                  <Select value={connectionLineStyle} onValueChange={setConnectionLineStyle}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="solid">실선</SelectItem>
+                      <SelectItem value="dashed">점선</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConnectionDialogOpen(false)}>
+              취소
+            </Button>
+            <Button onClick={handleCreateConnection} disabled={creatingConnection}>
+              {creatingConnection ? '생성 중...' : '연결 생성'}
             </Button>
           </DialogFooter>
         </DialogContent>

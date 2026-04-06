@@ -106,6 +106,63 @@ export const EQUIPMENT_TYPE_COLORS: Record<string, {
     hex: '#65a30d',
     threeHex: 0x65a30d,
   },
+  // 측정라인
+  CMM: {
+    tailwind: 'bg-sky-500',
+    hex: '#0ea5e9',
+    threeHex: 0x0ea5e9,
+  },
+  // 실크라인 (PCB 후공정)
+  SILK: {
+    tailwind: 'bg-amber-700',
+    hex: '#b45309',
+    threeHex: 0xb45309,
+  },
+  EXPOSURE: {
+    tailwind: 'bg-yellow-700',
+    hex: '#a16207',
+    threeHex: 0xa16207,
+  },
+  PRE_DRY: {
+    tailwind: 'bg-zinc-700',
+    hex: '#3f3f46',
+    threeHex: 0x3f3f46,
+  },
+  DRY: {
+    tailwind: 'bg-zinc-700',
+    hex: '#3f3f46',
+    threeHex: 0x3f3f46,
+  },
+  DEVELOP: {
+    tailwind: 'bg-sky-700',
+    hex: '#0369a1',
+    threeHex: 0x0369a1,
+  },
+  ETCH: {
+    tailwind: 'bg-red-700',
+    hex: '#b91c1c',
+    threeHex: 0xb91c1c,
+  },
+  STRIP: {
+    tailwind: 'bg-pink-600',
+    hex: '#db2777',
+    threeHex: 0xdb2777,
+  },
+  RINSE: {
+    tailwind: 'bg-zinc-700',
+    hex: '#3f3f46',
+    threeHex: 0x3f3f46,
+  },
+  CHEMICAL: {
+    tailwind: 'bg-emerald-500',
+    hex: '#10b981',
+    threeHex: 0x10b981,
+  },
+  PRINT: {
+    tailwind: 'bg-amber-600',
+    hex: '#d97706',
+    threeHex: 0xd97706,
+  },
   OTHER: {
     tailwind: 'bg-gray-600',
     hex: '#6b7280',
@@ -146,6 +203,34 @@ export const GROUP_TYPE_COLORS: Record<string, {
   },
 }
 
+// 컨베이어 역할(서브 타입) 색상 정의
+export const CONV_ROLE_COLORS: Record<string, {
+  tailwind: string
+  hex: string
+  threeHex: number
+  label: string
+}> = {
+  INPUT: {
+    tailwind: 'bg-blue-500',
+    hex: '#3b82f6',
+    threeHex: 0x3b82f6,
+    label: '투입',
+  },
+  OUTPUT: {
+    tailwind: 'bg-rose-500',
+    hex: '#f43f5e',
+    threeHex: 0xf43f5e,
+    label: '수취',
+  },
+}
+
+// 공용 라인 색상
+export const COMMON_LINE_COLOR = {
+  tailwind: 'bg-amber-500',
+  hex: '#f59e0b',
+  threeHex: 0xf59e0b,
+}
+
 // 유틸리티 함수 - 설비 타입
 export function getEquipmentTailwind(type: string): string {
   return EQUIPMENT_TYPE_COLORS[type]?.tailwind ?? EQUIPMENT_TYPE_COLORS.UNKNOWN.tailwind
@@ -157,6 +242,21 @@ export function getEquipmentHex(type: string): string {
 
 export function getEquipmentThreeHex(type: string): number {
   return EQUIPMENT_TYPE_COLORS[type]?.threeHex ?? EQUIPMENT_TYPE_COLORS.UNKNOWN.threeHex
+}
+
+// 유틸리티 함수 - 설비 타입 (서브 타입 고려: CONV + INPUT/OUTPUT)
+export function getEffectiveEquipmentHex(type: string, subType?: string | null): string {
+  if ((type === 'CONV' || type === 'CONVEYOR') && subType && CONV_ROLE_COLORS[subType]) {
+    return CONV_ROLE_COLORS[subType].hex
+  }
+  return getEquipmentHex(type)
+}
+
+export function getEffectiveEquipmentThreeHex(type: string, subType?: string | null): number {
+  if ((type === 'CONV' || type === 'CONVEYOR') && subType && CONV_ROLE_COLORS[subType]) {
+    return CONV_ROLE_COLORS[subType].threeHex
+  }
+  return getEquipmentThreeHex(type)
 }
 
 // 유틸리티 함수 - 그룹 타입

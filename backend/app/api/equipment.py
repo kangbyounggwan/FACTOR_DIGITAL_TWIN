@@ -69,6 +69,7 @@ def transform_scan_to_equipment(scan: dict) -> dict:
         "note": scan.get("note", ""),
         "scan_date": scan.get("scan_date"),
         "group_id": str(scan["group_id"]) if scan.get("group_id") else None,
+        "sub_type": scan.get("sub_type"),
     }
 
 
@@ -366,6 +367,8 @@ def update_equipment(
         update_data["verified"] = body.verified
     if body.note is not None:
         update_data["note"] = body.note
+    if body.sub_type is not None:
+        update_data["sub_type"] = body.sub_type if body.sub_type != "" else None
     if body.equipment_type is not None:
         # Look up equipment_type_id from code
         type_resp = (
@@ -453,6 +456,8 @@ def create_equipment(
         "verified": False,
         "note": body.note or "",
     }
+    if body.sub_type:
+        insert_data["sub_type"] = body.sub_type
 
     try:
         resp = db.table("equipment_scans").insert(insert_data).execute()
@@ -469,20 +474,21 @@ def delete_equipment(
     db: Client = Depends(get_supabase),
 ):
     """설비 삭제."""
-    # Check if equipment exists
-    existing = (
-        db.table("equipment_scans")
-        .select("id")
-        .eq("scan_code", equipment_id)
-        .single()
-        .execute()
-    )
-    if not existing.data:
-        raise HTTPException(status_code=404, detail="설비를 찾을 수 없습니다.")
-
     try:
+        # .single() 대신 .execute() 사용 (supabase-py v2에서 .single()은 0건일 때 APIError 발생)
+        existing = (
+            db.table("equipment_scans")
+            .select("id")
+            .eq("scan_code", equipment_id)
+            .execute()
+        )
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="설비를 찾을 수 없습니다.")
+
         db.table("equipment_scans").delete().eq("scan_code", equipment_id).execute()
         return {"deleted": equipment_id}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"설비 삭제 실패: {str(e)}")
 

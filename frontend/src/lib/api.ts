@@ -22,6 +22,7 @@ export interface Equipment {
   verified: boolean
   note: string
   group_id?: string | null
+  sub_type?: string | null
 }
 
 export interface SiteStats {
@@ -37,6 +38,7 @@ export interface EquipmentUpdate {
   zone?: string
   verified?: boolean
   note?: string
+  sub_type?: string | null
   // Position and size
   centroid_x?: number
   centroid_y?: number
@@ -506,3 +508,37 @@ export const fetchFactoryEquipmentGroups = (factoryCode: string) =>
 
 export const createEquipmentGroup = (data: EquipmentGroupCreate) =>
   api.post<EquipmentGroup>('/equipment-groups/', data).then(r => r.data)
+
+// =============================================================================
+// FLOW CONNECTIONS (설비 간 흐름 화살표)
+// =============================================================================
+
+export interface FlowConnection {
+  id: string
+  factory_id: string
+  name: string
+  description: string | null
+  source_equipment_id: string
+  target_equipment_id: string
+  color: string
+  line_style: string
+  created_at: string
+  updated_at: string
+}
+
+export const fetchFlowConnections = (factoryCode: string) =>
+  api.get<FlowConnection[]>(`/flow-connections/factory/${factoryCode}`).then(r => r.data)
+
+export const createFlowConnection = (data: {
+  factory_id: string
+  name: string
+  description?: string
+  source_equipment_id: string
+  target_equipment_id: string
+  color?: string
+  line_style?: string
+}) =>
+  api.post<FlowConnection>('/flow-connections/', data).then(r => r.data)
+
+export const deleteFlowConnection = (id: string) =>
+  api.delete(`/flow-connections/${id}`)

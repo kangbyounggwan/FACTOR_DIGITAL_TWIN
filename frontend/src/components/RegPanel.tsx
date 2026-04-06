@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Equipment, EquipmentUpdate, fetchEquipmentTypes, ensureEquipmentType } from '@/lib/api'
+import { CONV_ROLE_COLORS } from '@/lib/colors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -47,6 +48,7 @@ export default function RegPanel({ equipment: eq, onSave, onClose, lineName, onU
   const [zone, setZone] = useState('')
   const [verified, setVerified] = useState(false)
   const [note, setNote] = useState('')
+  const [subType, setSubType] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const typeInputRef = useRef<HTMLInputElement>(null)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
@@ -70,6 +72,7 @@ export default function RegPanel({ equipment: eq, onSave, onClose, lineName, onU
     if (zone !== (eq.zone ?? '')) count++
     if (verified !== eq.verified) count++
     if (note !== (eq.note ?? '')) count++
+    if ((subType ?? null) !== (eq.sub_type ?? null)) count++
     // 소수점 2자리 기준 비교
     const round2 = (n: number) => Math.round(n * 100) / 100
     if (round2(parseFloat(centroidX) || 0) !== round2(eq.centroid_x)) count++
@@ -79,7 +82,7 @@ export default function RegPanel({ equipment: eq, onSave, onClose, lineName, onU
     if (round2(parseFloat(sizeD) || 0) !== round2(eq.size_d)) count++
     if (round2(parseFloat(sizeH) || 0) !== round2(eq.size_h)) count++
     return count
-  }, [eq, type, zone, verified, note, centroidX, centroidY, centroidZ, sizeW, sizeD, sizeH])
+  }, [eq, type, zone, verified, note, subType, centroidX, centroidY, centroidZ, sizeW, sizeD, sizeH])
 
   const hasChanges = changeCount > 0
 
@@ -120,6 +123,7 @@ export default function RegPanel({ equipment: eq, onSave, onClose, lineName, onU
     setZone(eq.zone ?? '')
     setVerified(eq.verified)
     setNote(eq.note ?? '')
+    setSubType(eq.sub_type ?? null)
   }, [eq?.equipment_id])
 
   // 위치/크기 실시간 업데이트 (드래그 시 반영) - 입력 중인 필드는 제외
@@ -181,6 +185,7 @@ export default function RegPanel({ equipment: eq, onSave, onClose, lineName, onU
       zone,
       verified,
       note,
+      sub_type: subType ?? '',
       centroid_x: round2(parseFloat(centroidX) || 0),
       centroid_y: round2(parseFloat(centroidY) || 0),
       centroid_z: round2(parseFloat(centroidZ) || 0),
@@ -323,6 +328,34 @@ export default function RegPanel({ equipment: eq, onSave, onClose, lineName, onU
               <p className="text-xs text-primary">* 새로운 설비 타입이 등록됩니다</p>
             )}
           </div>
+
+          {/* 컨베이어 역할 (CONV 타입일 때만) */}
+          {(type === 'CONV' || type === 'CONVEYOR') && (
+            <div className="space-y-2">
+              <Label className="font-mono text-xs uppercase tracking-widest">컨베이어 역할</Label>
+              <div className="flex gap-2">
+                {[
+                  { value: null as string | null, label: '없음', bgClass: 'bg-zinc-600' },
+                  { value: 'INPUT' as string | null, label: '투입', bgClass: 'bg-blue-500' },
+                  { value: 'OUTPUT' as string | null, label: '수취', bgClass: 'bg-rose-500' },
+                ].map(option => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    onClick={() => setSubType(option.value)}
+                    className={cn(
+                      'flex-1 px-3 py-2 rounded-md text-sm font-mono font-medium transition-all border-2',
+                      subType === option.value
+                        ? `${option.bgClass} text-white border-white/50`
+                        : 'bg-muted text-muted-foreground border-transparent hover:bg-muted/80'
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Production Line (Read-only) */}
           {lineName && (

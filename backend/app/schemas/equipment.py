@@ -10,6 +10,7 @@ class EquipmentCreate(BaseModel):
     name: Optional[str] = ""
     equipment_type: Optional[str] = "UNKNOWN"
     zone: Optional[str] = ""
+    sub_type: Optional[str] = None
     centroid_x: float = 0.0
     centroid_y: float = 0.0
     centroid_z: float = 0.0
@@ -25,6 +26,7 @@ class EquipmentUpdate(BaseModel):
     zone:           Optional[str] = None
     verified:       Optional[bool] = None
     note:           Optional[str] = None
+    sub_type:       Optional[str] = None
     # Position and size fields
     centroid_x:     Optional[float] = None
     centroid_y:     Optional[float] = None

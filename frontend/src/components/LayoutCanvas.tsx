@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
-import { Equipment, EquipmentGroup } from '@/lib/api'
-import { getEquipmentHex, getGroupHex } from '@/lib/colors'
+import { Equipment, EquipmentGroup, FlowConnection } from '@/lib/api'
+import { getEquipmentHex, getEffectiveEquipmentHex, getGroupHex, CONV_ROLE_COLORS } from '@/lib/colors'
 
 export interface FloorBounds {
   x: number
@@ -25,6 +25,8 @@ interface LayoutCanvasProps {
   groups?: EquipmentGroup[]
   selectedGroupId?: string | null
   onSelectGroup?: (group: EquipmentGroup | null) => void
+  flowConnections?: FlowConnection[]
+  commonLineCode?: string
 }
 
 type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se' | null
@@ -45,6 +47,8 @@ export default function LayoutCanvas({
   groups = [],
   selectedGroupId,
   onSelectGroup,
+  flowConnections = [],
+  commonLineCode,
 }: LayoutCanvasProps) {
   // 그룹에 속한 설비 ID들 (그룹 박스로 대체되므로 개별 렌더링 제외)
   const groupedEquipmentIds = useMemo(() => {
@@ -54,6 +58,23 @@ export default function LayoutCanvas({
     })
     return ids
   }, [groups])
+
+  // 공용 라인 설비 ID들 (공용 라인에 속하면서 flow connection에 연결된 설비만)
+  const commonEquipmentIds = useMemo(() => {
+    if (!commonLineCode) return new Set<string>()
+    const commonLineIds = new Set(
+      equipment
+        .filter(eq => eq.line_code === commonLineCode)
+        .map(eq => eq.equipment_id)
+    )
+    // flow connection에 연결된 공용 라인 설비만 필터
+    const connectedIds = new Set<string>()
+    flowConnections.forEach(fc => {
+      if (commonLineIds.has(fc.source_equipment_id)) connectedIds.add(fc.source_equipment_id)
+      if (commonLineIds.has(fc.target_equipment_id)) connectedIds.add(fc.target_equipment_id)
+    })
+    return connectedIds
+  }, [equipment, commonLineCode, flowConnections])
 
   const svgRef = useRef<SVGSVGElement>(null)
   const wasInteractingRef = useRef(false)
@@ -78,7 +99,9 @@ export default function LayoutCanvas({
     currentY: number
     origW: number
     origD: number
-  }>({ equipmentId: null, offsetX: 0, offsetY: 0, startClientX: 0, startClientY: 0, isDragging: false, currentX: 0, currentY: 0, origW: 0, origD: 0 })
+    isMultiDrag: boolean
+    multiOrigPositions: Record<string, { x: number; y: number; w: number; d: number }>
+  }>({ equipmentId: null, offsetX: 0, offsetY: 0, startClientX: 0, startClientY: 0, isDragging: false, currentX: 0, currentY: 0, origW: 0, origD: 0, isMultiDrag: false, multiOrigPositions: {} })
 
   // 리사이즈 상태
   const resizeStateRef = useRef<{
@@ -405,6 +428,19 @@ export default function LayoutCanvas({
           drag.currentX = newX
           drag.currentY = newY
           applyTransformToEquipment(drag.equipmentId, newX, newY, drag.origW, drag.origD)
+
+          // 다중 선택 드래그: 나머지 선택된 설비도 같은 delta만큼 이동
+          if (drag.isMultiDrag) {
+            const origMain = drag.multiOrigPositions[drag.equipmentId]
+            if (origMain) {
+              const deltaX = newX - origMain.x
+              const deltaY = newY - origMain.y
+              for (const [id, orig] of Object.entries(drag.multiOrigPositions)) {
+                if (id === drag.equipmentId) continue
+                applyTransformToEquipment(id, orig.x + deltaX, orig.y + deltaY, orig.w, orig.d)
+              }
+            }
+          }
         }
       }
     }
@@ -454,10 +490,23 @@ export default function LayoutCanvas({
 
       // 드래그 종료
       if (drag.equipmentId && drag.isDragging) {
-        onUpdatePosition(drag.equipmentId, drag.currentX, drag.currentY)
+        if (drag.isMultiDrag && onMoveMultiple) {
+          // 다중 드래그: delta 계산 후 onMoveMultiple 호출
+          const origMain = drag.multiOrigPositions[drag.equipmentId]
+          if (origMain) {
+            const deltaX = drag.currentX - origMain.x
+            const deltaY = drag.currentY - origMain.y
+            const ids = Object.keys(drag.multiOrigPositions)
+            onMoveMultiple(ids, deltaX, deltaY)
+          }
+        } else {
+          onUpdatePosition(drag.equipmentId, drag.currentX, drag.currentY)
+        }
       }
       drag.equipmentId = null
       drag.isDragging = false
+      drag.isMultiDrag = false
+      drag.multiOrigPositions = {}
 
       // 패닝 종료
       pan.isPanning = false
@@ -476,7 +525,7 @@ export default function LayoutCanvas({
       document.removeEventListener('mousemove', handleNativeMouseMove)
       document.removeEventListener('mouseup', handleNativeMouseUp)
     }
-  }, [equipment, getSvgPoint, applyTransformToEquipment, updateAreaSelectRect, onUpdatePosition, onUpdateSize, onMultiSelect, requestUpdate])
+  }, [equipment, getSvgPoint, applyTransformToEquipment, updateAreaSelectRect, onUpdatePosition, onUpdateSize, onMultiSelect, onMoveMultiple, requestUpdate])
 
   // 패닝 또는 영역 선택 시작
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -493,10 +542,41 @@ export default function LayoutCanvas({
 
   // 설비 드래그 시작
   const handleEquipmentMouseDown = useCallback((e: React.MouseEvent, eq: Equipment) => {
+    if (e.button === 0 && e.shiftKey && onMultiSelect) {
+      // Shift+Click: 개별 설비 다중 선택 토글
+      e.stopPropagation()
+      e.preventDefault()
+      wasInteractingRef.current = true
+      const id = eq.equipment_id
+      const currentIds = [...multiSelectedIds]
+      const idx = currentIds.indexOf(id)
+      if (idx >= 0) {
+        currentIds.splice(idx, 1)
+      } else {
+        currentIds.push(id)
+      }
+      onMultiSelect(currentIds)
+      return
+    }
+
     if (e.button === 0 && !e.shiftKey) {
       e.stopPropagation()
       wasInteractingRef.current = true
       const point = getSvgPoint(e.clientX, e.clientY)
+
+      // 다중 선택된 설비 중 하나를 드래그하면 전체 함께 이동
+      const isPartOfMultiSelect = multiSelectedIds.length > 1 && multiSelectedIds.includes(eq.equipment_id)
+
+      const multiOrigPositions: Record<string, { x: number; y: number; w: number; d: number }> = {}
+      if (isPartOfMultiSelect) {
+        for (const id of multiSelectedIds) {
+          const item = equipment.find(e => e.equipment_id === id)
+          if (item) {
+            multiOrigPositions[id] = { x: item.centroid_x, y: item.centroid_z, w: item.size_w, d: item.size_d }
+          }
+        }
+      }
+
       dragStateRef.current = {
         equipmentId: eq.equipment_id,
         offsetX: point.x - eq.centroid_x,
@@ -508,10 +588,12 @@ export default function LayoutCanvas({
         currentY: eq.centroid_z,
         origW: eq.size_w,
         origD: eq.size_d,
+        isMultiDrag: isPartOfMultiSelect,
+        multiOrigPositions,
       }
       onSelect(eq)
     }
-  }, [getSvgPoint, onSelect])
+  }, [getSvgPoint, onSelect, onMultiSelect, multiSelectedIds, equipment])
 
   // 리사이즈 핸들 드래그 시작
   const handleResizeMouseDown = useCallback((e: React.MouseEvent, eq: Equipment, handle: ResizeHandle) => {
@@ -551,7 +633,7 @@ export default function LayoutCanvas({
     <div className="w-full h-full bg-zinc-900 relative overflow-hidden">
       {/* 툴바 힌트 */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 font-mono text-xs text-muted-foreground pointer-events-none z-10">
-        드래그: 설비 이동 | Shift+드래그: 영역 선택 | 스크롤: 줌{multiSelectedIds.length > 0 && ` | 화살표: 선택 이동 (${multiSelectedIds.length}개)`}
+        드래그: 이동 | Shift+클릭: 다중선택 | Shift+드래그: 영역선택 | 스크롤: 줌{multiSelectedIds.length > 0 && ` | 화살표: 이동 (${multiSelectedIds.length}개)`}
       </div>
 
       {/* 스케일 표시 */}
@@ -590,6 +672,21 @@ export default function LayoutCanvas({
             <rect width="5" height="5" fill="url(#grid)" />
             <path d="M 5 0 L 0 0 0 5" fill="none" stroke="#444" strokeWidth="0.04" />
           </pattern>
+          {/* ERD 스타일 화살표 마커 */}
+          {flowConnections.map(fc => (
+            <marker
+              key={`marker-${fc.id}`}
+              id={`flow-arrow-${fc.id}`}
+              markerWidth="4"
+              markerHeight="3"
+              refX="3.5"
+              refY="1.5"
+              orient="auto"
+              markerUnits="strokeWidth"
+            >
+              <polygon points="0 0, 4 1.5, 0 3" fill={fc.color} />
+            </marker>
+          ))}
         </defs>
         <rect
           x={viewBox.x - 1000}
@@ -739,11 +836,111 @@ export default function LayoutCanvas({
           )
         })}
 
+        {/* 흐름 화살표 렌더링 (ERD 스타일 직각 라우팅) */}
+        {flowConnections.map(fc => {
+          const source = equipment.find(eq => eq.equipment_id === fc.source_equipment_id)
+          const target = equipment.find(eq => eq.equipment_id === fc.target_equipment_id)
+          if (!source || !target) return null
+
+          // 설비 박스 경계 계산
+          const sL = source.centroid_x - source.size_w / 2
+          const sR = source.centroid_x + source.size_w / 2
+          const sT = source.centroid_z - source.size_d / 2
+          const sB = source.centroid_z + source.size_d / 2
+          const tL = target.centroid_x - target.size_w / 2
+          const tR = target.centroid_x + target.size_w / 2
+          const tT = target.centroid_z - target.size_d / 2
+          const tB = target.centroid_z + target.size_d / 2
+
+          const dx = target.centroid_x - source.centroid_x
+          const dy = target.centroid_z - source.centroid_z
+          const gap = 0.4
+
+          let startX: number, startY: number, endX: number, endY: number
+          let pathD: string
+          let labelX: number, labelY: number
+
+          if (Math.abs(dx) >= Math.abs(dy)) {
+            // 주로 가로 방향 → 좌/우 변에서 출발
+            if (dx > 0) {
+              startX = sR; startY = source.centroid_z
+              endX = tL; endY = target.centroid_z
+            } else {
+              startX = sL; startY = source.centroid_z
+              endX = tR; endY = target.centroid_z
+            }
+            const midX = (startX + endX) / 2
+            pathD = `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`
+            labelX = midX
+            labelY = Math.min(startY, endY) - 0.25
+          } else {
+            // 주로 세로 방향 → 상/하 변에서 출발
+            if (dy > 0) {
+              startX = source.centroid_x; startY = sB
+              endX = target.centroid_x; endY = tT
+            } else {
+              startX = source.centroid_x; startY = sT
+              endX = target.centroid_x; endY = tB
+            }
+            const midY = (startY + endY) / 2
+            pathD = `M ${startX} ${startY} L ${startX} ${midY} L ${endX} ${midY} L ${endX} ${endY}`
+            labelX = Math.min(startX, endX) + Math.abs(endX - startX) / 2
+            labelY = midY - 0.25
+          }
+
+          return (
+            <g key={fc.id} style={{ pointerEvents: 'none' }}>
+              <path
+                d={pathD}
+                fill="none"
+                stroke={fc.color}
+                strokeWidth={0.08}
+                strokeDasharray={fc.line_style === 'dashed' ? '0.3 0.15' : undefined}
+                markerEnd={`url(#flow-arrow-${fc.id})`}
+                opacity={0.9}
+                strokeLinejoin="round"
+              />
+              {/* 출발점 원형 마커 */}
+              <circle
+                cx={startX}
+                cy={startY}
+                r={0.12}
+                fill={fc.color}
+                opacity={0.9}
+              />
+              {/* 라벨 배경 */}
+              <rect
+                x={labelX - fc.name.length * 0.11}
+                y={labelY - 0.22}
+                width={fc.name.length * 0.22}
+                height={0.35}
+                fill="#1a1a2e"
+                fillOpacity={0.85}
+                rx={0.08}
+              />
+              <text
+                x={labelX}
+                y={labelY}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill={fc.color}
+                fontSize={0.28}
+                fontFamily="monospace"
+                fontWeight="bold"
+                opacity={0.95}
+                style={{ userSelect: 'none' }}
+              >
+                {fc.name}
+              </text>
+            </g>
+          )
+        })}
+
         {/* 설비 렌더링 */}
         {equipment.map(eq => {
           const isSelected = eq.equipment_id === selectedId
           const isMultiSelected = multiSelectedIds.includes(eq.equipment_id)
-          const color = getEquipmentHex(eq.equipment_type)
+          const color = getEffectiveEquipmentHex(eq.equipment_type, eq.sub_type)
 
           const cx = eq.centroid_x
           const cy = eq.centroid_z
@@ -817,6 +1014,92 @@ export default function LayoutCanvas({
               >
                 {eq.equipment_type}
               </text>
+
+              {/* 공용 라인 설비 표시 */}
+              {commonEquipmentIds.has(eq.equipment_id) && (
+                <>
+                  <rect
+                    x={x - 0.12}
+                    y={y - 0.12}
+                    width={eq.size_w + 0.24}
+                    height={eq.size_d + 0.24}
+                    fill="none"
+                    stroke="#f59e0b"
+                    strokeWidth={0.08}
+                    strokeDasharray="0.25 0.12"
+                    rx={0.15}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  <rect
+                    x={x + eq.size_w - Math.min(eq.size_w, eq.size_d) * 0.5}
+                    y={y - Math.min(eq.size_w, eq.size_d) * 0.18}
+                    width={Math.min(eq.size_w, eq.size_d) * 0.5}
+                    height={Math.min(eq.size_w, eq.size_d) * 0.2}
+                    fill="#f59e0b"
+                    rx={0.05}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  <text
+                    x={x + eq.size_w - Math.min(eq.size_w, eq.size_d) * 0.25}
+                    y={y - Math.min(eq.size_w, eq.size_d) * 0.06}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill="#000"
+                    fontSize={Math.min(eq.size_w, eq.size_d) * 0.12}
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                    style={{ userSelect: 'none', pointerEvents: 'none' }}
+                  >
+                    공용
+                  </text>
+                </>
+              )}
+
+              {/* 컨베이어 역할 표시 (투입/수취) */}
+              {(eq.equipment_type === 'CONV' || eq.equipment_type === 'CONVEYOR') && eq.sub_type && CONV_ROLE_COLORS[eq.sub_type] && (() => {
+                const roleColor = CONV_ROLE_COLORS[eq.sub_type!]
+                const minDim = Math.min(eq.size_w, eq.size_d)
+                const badgeW = minDim * 0.5
+                const badgeH = minDim * 0.2
+                return (
+                  <>
+                    <rect
+                      x={x - 0.12}
+                      y={y - 0.12}
+                      width={eq.size_w + 0.24}
+                      height={eq.size_d + 0.24}
+                      fill="none"
+                      stroke={roleColor.hex}
+                      strokeWidth={0.08}
+                      strokeDasharray="0.25 0.12"
+                      rx={0.15}
+                      style={{ pointerEvents: 'none' }}
+                    />
+                    <rect
+                      x={x}
+                      y={y - badgeH * 0.9}
+                      width={badgeW}
+                      height={badgeH}
+                      fill={roleColor.hex}
+                      rx={0.05}
+                      style={{ pointerEvents: 'none' }}
+                    />
+                    <text
+                      x={x + badgeW / 2}
+                      y={y - badgeH * 0.9 + badgeH / 2}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fill="#fff"
+                      fontSize={minDim * 0.12}
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                      style={{ userSelect: 'none', pointerEvents: 'none' }}
+                    >
+                      {roleColor.label}
+                    </text>
+                  </>
+                )
+              })()}
 
               {isSelected && onUpdateSize && (
                 <>
