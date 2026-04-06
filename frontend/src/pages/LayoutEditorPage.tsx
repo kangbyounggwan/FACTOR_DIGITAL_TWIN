@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useCompanies, useCompanyFactories, useFactoryLines } from '@/hooks/useFactories'
-import { useFactoryEquipment, useEquipmentGroups } from '@/hooks/useEquipment'
+import { useFactoryEquipment, useEquipmentGroups, useFlowConnections } from '@/hooks/useEquipment'
 import { useLayouts, useActiveLayout, useLayoutMutations } from '@/hooks/useLayouts'
 import { Company, Factory, ProductionLine, Equipment, EquipmentUpdate, LayoutEquipmentCreate, updateEquipmentBatch, EquipmentBatchUpdate, fetchLayout } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -52,6 +52,9 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
 
   // Equipment groups (라인 선택 시 라인별, 전체 보기 시 공장 전체)
   const { groups, reload: reloadGroups } = useEquipmentGroups(selectedLine?.code ?? null, selectedFactory?.code ?? null)
+
+  // Flow connections (공장 전체)
+  const { connections: flowConnections, reload: reloadFlowConnections } = useFlowConnections(selectedFactory?.code ?? null)
   const [selectedGroup, setSelectedGroup] = useState<import('@/lib/api').EquipmentGroup | null>(null)
 
   // 레이아웃 데이터
@@ -115,6 +118,21 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
     }
     setSelected(eq)
   }, [selected, regPanelHasChanges, setSelected])
+
+  // 공장 변경 시 레이아웃/바닥/배경 상태 초기화
+  useEffect(() => {
+    setSelectedLayoutId(null)
+    setFloorBounds(null)
+    setBackgroundImage(null)
+    setBackgroundOpacity(0.5)
+    setShowBackgroundImage(true)
+    setHasFloorChanges(false)
+    setHasBackgroundChanges(false)
+    setLocalPositions({})
+    setLocalSizes({})
+    setHasChanges(false)
+    setMultiSelectedIds([])
+  }, [selectedFactory?.id])
 
   // 활성 레이아웃이 로드되면 자동 선택 (위치/크기는 항상 DB 최신값 사용)
   useEffect(() => {
@@ -679,6 +697,8 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
                 groups={groups}
                 selectedGroupId={selectedGroup?.id ?? null}
                 onSelectGroup={setSelectedGroup}
+                flowConnections={flowConnections}
+                commonLineCode="JM_CMN_PRINT"
               />
 
               {/* 상단 툴바 - 단일 행 */}
@@ -989,6 +1009,9 @@ export default function LayoutEditorPage({ selection, onSelectCompany, onSelectF
                   reloadEquipment(true)
                   reloadGroups()
                 }}
+                factoryId={selectedFactory?.id}
+                flowConnections={flowConnections}
+                onFlowConnectionChanged={reloadFlowConnections}
               />
             )}
 

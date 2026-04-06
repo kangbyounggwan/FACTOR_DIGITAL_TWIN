@@ -21,6 +21,8 @@ export function useCompanies() {
 
 // 회사별 공장 목록
 export function useCompanyFactories(companyCode: string | null) {
+  const queryClient = useQueryClient()
+
   const { data: factories = [], isLoading: loading, error } = useQuery({
     queryKey: ['company-factories', companyCode],
     queryFn: () => fetchCompanyFactories(companyCode!),
@@ -28,11 +30,17 @@ export function useCompanyFactories(companyCode: string | null) {
     staleTime: 10 * 60 * 1000,
   })
 
-  return { factories, loading, error: error as Error | null }
+  const reload = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['company-factories', companyCode] })
+  }, [queryClient, companyCode])
+
+  return { factories, loading, error: error as Error | null, reload }
 }
 
 // 공장별 라인 목록
 export function useFactoryLines(factoryCode: string | null) {
+  const queryClient = useQueryClient()
+
   const { data: lines = [], isLoading: loading, error } = useQuery({
     queryKey: ['factory-lines', factoryCode],
     queryFn: () => fetchFactoryLines(factoryCode!),
@@ -40,5 +48,9 @@ export function useFactoryLines(factoryCode: string | null) {
     staleTime: 10 * 60 * 1000,
   })
 
-  return { lines, loading, error: error as Error | null }
+  const reload = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['factory-lines', factoryCode] })
+  }, [queryClient, factoryCode])
+
+  return { lines, loading, error: error as Error | null, reload }
 }
