@@ -1,7 +1,7 @@
 from typing import List
 from fastapi import APIRouter, HTTPException, Depends
 from supabase import Client
-from app.core.supabase import get_supabase
+from app.core.supabase import get_supabase, fetch_one
 from app.schemas.flow_connection import FlowConnectionCreate, FlowConnectionOut
 
 router = APIRouter()
@@ -25,24 +25,8 @@ def transform_connection(row: dict) -> dict:
 @router.get("/factory/{factory_code}", response_model=List[FlowConnectionOut])
 def list_flow_connections(factory_code: str, db: Client = Depends(get_supabase)):
     """List all flow connections for a factory."""
-    factory_resp = (
-        db.table("factories")
-        .select("id")
-        .eq("code", factory_code)
-        .single()
-        .execute()
-    )
-    if not factory_resp.data:
-        raise HTTPException(status_code=404, detail="Factory not found.")
-
-    factory_id = factory_resp.data["id"]
-    resp = (
-        db.table("flow_connections")
-        .select("*")
-        .eq("factory_id", factory_id)
-        .order("created_at")
-        .execute()
-    )
+    factory = fetch_one(db, "factories", "code", factory_code, select="id", label="공장")
+    resp = db.table("flow_connections").select("*").eq("factory_id", factory["id"]).order("created_at").execute()
     return [transform_connection(r) for r in resp.data]
 
 
@@ -63,6 +47,8 @@ def create_flow_connection(body: FlowConnectionCreate, db: Client = Depends(get_
         if resp.data:
             return transform_connection(resp.data[0])
         raise HTTPException(status_code=500, detail="Failed to create flow connection.")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed: {str(e)}")
 

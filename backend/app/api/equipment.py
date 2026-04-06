@@ -2,7 +2,7 @@ from typing import Literal, List
 import random
 from fastapi import APIRouter, HTTPException, Depends
 from supabase import Client
-from app.core.supabase import get_supabase
+from app.core.supabase import get_supabase, fetch_one
 from app.schemas.equipment import (
     EquipmentCreate,
     EquipmentUpdate,
@@ -77,19 +77,8 @@ def transform_scan_to_equipment(scan: dict) -> dict:
 def list_equipment_by_factory(factory_code: str, db: Client = Depends(get_supabase)):
     """공장 코드로 전체 설비 목록 조회 (모든 라인 포함)."""
     try:
-        # First get factory_id
-        factory_resp = (
-            db.table("factories")
-            .select("id")
-            .eq("code", factory_code)
-            .single()
-            .execute()
-        )
-
-        if not factory_resp.data:
-            raise HTTPException(status_code=404, detail="공장을 찾을 수 없습니다.")
-
-        factory_id = factory_resp.data["id"]
+        factory = fetch_one(db, "factories", "code", factory_code, select="id", label="공장")
+        factory_id = factory["id"]
 
         # Get all lines in this factory
         lines_resp = (
@@ -133,19 +122,8 @@ def list_equipment_by_factory(factory_code: str, db: Client = Depends(get_supaba
 @router.get("/lines/{line_code}")
 def list_equipment_by_line(line_code: str, db: Client = Depends(get_supabase)):
     """라인(사이트) 코드로 설비 목록 조회."""
-    # First get line_id from production_lines
-    line_resp = (
-        db.table("production_lines")
-        .select("id")
-        .eq("code", line_code)
-        .single()
-        .execute()
-    )
-
-    if not line_resp.data:
-        raise HTTPException(status_code=404, detail="라인을 찾을 수 없습니다.")
-
-    line_id = line_resp.data["id"]
+    line = fetch_one(db, "production_lines", "code", line_code, select="id", label="라인")
+    line_id = line["id"]
 
     # Get equipment scans with type info
     resp = (
@@ -175,22 +153,14 @@ def get_equipment_points(
     db: Client = Depends(get_supabase),
 ):
     """설비 포인트클라우드 데이터 조회."""
-    resp = (
-        db.table("equipment_scans")
-        .select("ply_url, centroid_x, centroid_y, centroid_z, size_w, size_h, size_d, point_count")
-        .eq("scan_code", equipment_id)
-        .single()
-        .execute()
-    )
-
-    if not resp.data:
-        raise HTTPException(status_code=404, detail="설비를 찾을 수 없습니다.")
-
-    ply_url = resp.data.get("ply_url")
+    scan = fetch_one(db, "equipment_scans", "scan_code", equipment_id,
+                     select="ply_url, centroid_x, centroid_y, centroid_z, size_w, size_h, size_d, point_count",
+                     label="설비")
+    ply_url = scan.get("ply_url")
 
     # If no PLY URL, generate mock point cloud from centroid/size
     if not ply_url:
-        return generate_mock_points(resp.data, lod)
+        return generate_mock_points(scan, lod)
 
     # Load and return point cloud data
     max_points = get_lod_max_points(lod)
@@ -206,18 +176,10 @@ def get_equipment_points(
 @router.get("/{site_id}/stats/summary")
 def get_site_stats(site_id: str, db: Client = Depends(get_supabase)):
     """검수 현황 통계."""
-    line_resp = (
-        db.table("production_lines")
-        .select("id")
-        .eq("code", site_id)
-        .single()
-        .execute()
-    )
-
+    line_resp = db.table("production_lines").select("id").eq("code", site_id).execute()
     if not line_resp.data:
         return {"total": 0, "verified": 0, "pending": 0, "by_type": {}}
-
-    line_id = line_resp.data["id"]
+    line_id = line_resp.data[0]["id"]
 
     rows = (
         db.table("equipment_scans")
@@ -252,19 +214,11 @@ def list_equipment(site_id: str, db: Client = Depends(get_supabase)):
 @router.get("/{site_id}/{equipment_id}")
 def get_equipment(site_id: str, equipment_id: str, db: Client = Depends(get_supabase)):
     """단일 설비 조회."""
-    resp = (
-        db.table("equipment_scans")
-        .select("*, equipment_types(code)")
-        .eq("scan_code", equipment_id)
-        .single()
-        .execute()
-    )
-    if not resp.data:
-        raise HTTPException(status_code=404, detail="설비를 찾을 수 없습니다.")
-
-    eq = transform_scan_to_equipment(resp.data)
-    if resp.data.get("equipment_types"):
-        eq["equipment_type"] = resp.data["equipment_types"]["code"]
+    scan = fetch_one(db, "equipment_scans", "scan_code", equipment_id,
+                     select="*, equipment_types(code)", label="설비")
+    eq = transform_scan_to_equipment(scan)
+    if scan.get("equipment_types"):
+        eq["equipment_type"] = scan["equipment_types"]["code"]
     return eq
 
 
@@ -318,21 +272,12 @@ def bulk_update_verified(
     """전체 설비의 verified 상태를 일괄 변경."""
     try:
         if line_code:
-            # Get line_id first
-            line_resp = (
-                db.table("production_lines")
-                .select("id")
-                .eq("code", line_code)
-                .single()
-                .execute()
-            )
-            if not line_resp.data:
-                raise HTTPException(status_code=404, detail="라인을 찾을 수 없습니다.")
+            line = fetch_one(db, "production_lines", "code", line_code, select="id", label="라인")
 
             resp = (
                 db.table("equipment_scans")
                 .update({"verified": verified})
-                .eq("line_id", line_resp.data["id"])
+                .eq("line_id", line["id"])
                 .execute()
             )
         else:
@@ -500,18 +445,7 @@ def split_equipment(
     db: Client = Depends(get_supabase),
 ):
     """설비를 평면을 기준으로 두 개로 분할."""
-    resp = (
-        db.table("equipment_scans")
-        .select("*")
-        .eq("scan_code", equipment_id)
-        .single()
-        .execute()
-    )
-
-    if not resp.data:
-        raise HTTPException(status_code=404, detail="설비를 찾을 수 없습니다.")
-
-    original = resp.data
+    original = fetch_one(db, "equipment_scans", "scan_code", equipment_id, label="설비")
     plane_normal = body.plane_normal
     offset = 0.5
 
@@ -604,18 +538,7 @@ def update_equipment_points_endpoint(
     if not body.exclude_indices and not body.include_indices:
         raise HTTPException(status_code=400, detail="exclude_indices 또는 include_indices 중 하나는 필수")
 
-    resp = (
-        db.table("equipment_scans")
-        .select("*")
-        .eq("scan_code", equipment_id)
-        .single()
-        .execute()
-    )
-
-    if not resp.data:
-        raise HTTPException(status_code=404, detail="설비를 찾을 수 없습니다.")
-
-    original = resp.data
+    original = fetch_one(db, "equipment_scans", "scan_code", equipment_id, label="설비")
     current_points = original.get("point_count", 0)
 
     excluded_count = len(body.exclude_indices) if body.exclude_indices else 0

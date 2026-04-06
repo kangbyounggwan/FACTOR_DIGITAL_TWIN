@@ -1,7 +1,8 @@
 from typing import List
 from fastapi import APIRouter, HTTPException, Depends
 from supabase import Client
-from app.core.supabase import get_supabase
+from app.core.supabase import get_supabase, fetch_one
+
 from app.schemas.equipment_group import (
     EquipmentGroupCreate,
     EquipmentGroupUpdate,
@@ -37,18 +38,8 @@ def transform_group(group: dict, members: List[dict] = None) -> dict:
 @router.get("/factory/{factory_code}", response_model=List[EquipmentGroupOut])
 def list_groups_by_factory(factory_code: str, db: Client = Depends(get_supabase)):
     """공장의 모든 설비 그룹 조회."""
-    # Get factory_id
-    factory_resp = (
-        db.table("factories")
-        .select("id")
-        .eq("code", factory_code)
-        .single()
-        .execute()
-    )
-    if not factory_resp.data:
-        raise HTTPException(status_code=404, detail="공장을 찾을 수 없습니다.")
-
-    factory_id = factory_resp.data["id"]
+    factory = fetch_one(db, "factories", "code", factory_code, select="id", label="공장")
+    factory_id = factory["id"]
 
     # Get all lines in factory
     lines_resp = (
@@ -88,18 +79,8 @@ def list_groups_by_factory(factory_code: str, db: Client = Depends(get_supabase)
 @router.get("/line/{line_code}", response_model=List[EquipmentGroupOut])
 def list_groups_by_line(line_code: str, db: Client = Depends(get_supabase)):
     """라인의 모든 설비 그룹 조회."""
-    # Get line_id
-    line_resp = (
-        db.table("production_lines")
-        .select("id")
-        .eq("code", line_code)
-        .single()
-        .execute()
-    )
-    if not line_resp.data:
-        raise HTTPException(status_code=404, detail="라인을 찾을 수 없습니다.")
-
-    line_id = line_resp.data["id"]
+    line = fetch_one(db, "production_lines", "code", line_code, select="id", label="라인")
+    line_id = line["id"]
 
     # Get groups
     groups_resp = (
@@ -112,7 +93,6 @@ def list_groups_by_line(line_code: str, db: Client = Depends(get_supabase)):
 
     result = []
     for group in groups_resp.data:
-        # Get members for each group
         members_resp = (
             db.table("equipment_scans")
             .select("scan_code")
@@ -127,15 +107,7 @@ def list_groups_by_line(line_code: str, db: Client = Depends(get_supabase)):
 @router.get("/{group_id}", response_model=EquipmentGroupOut)
 def get_group(group_id: str, db: Client = Depends(get_supabase)):
     """설비 그룹 상세 조회."""
-    group_resp = (
-        db.table("equipment_groups")
-        .select("*")
-        .eq("id", group_id)
-        .single()
-        .execute()
-    )
-    if not group_resp.data:
-        raise HTTPException(status_code=404, detail="그룹을 찾을 수 없습니다.")
+    group = fetch_one(db, "equipment_groups", "id", group_id, label="그룹")
 
     members_resp = (
         db.table("equipment_scans")
@@ -144,7 +116,7 @@ def get_group(group_id: str, db: Client = Depends(get_supabase)):
         .execute()
     )
 
-    return transform_group(group_resp.data, members_resp.data)
+    return transform_group(group, members_resp.data)
 
 
 @router.post("/", response_model=EquipmentGroupOut)
@@ -190,6 +162,8 @@ def create_group(body: EquipmentGroupCreate, db: Client = Depends(get_supabase))
         # Fetch updated group with members
         return get_group(group["id"], db)
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"그룹 생성 실패: {str(e)}")
 
@@ -232,16 +206,7 @@ def add_members(
     db: Client = Depends(get_supabase),
 ):
     """그룹에 설비 추가."""
-    # Verify group exists
-    group_resp = (
-        db.table("equipment_groups")
-        .select("id")
-        .eq("id", group_id)
-        .single()
-        .execute()
-    )
-    if not group_resp.data:
-        raise HTTPException(status_code=404, detail="그룹을 찾을 수 없습니다.")
+    fetch_one(db, "equipment_groups", "id", group_id, select="id", label="그룹")
 
     # Add members
     for eq_id in body.equipment_ids:
@@ -259,16 +224,7 @@ def remove_members(
     db: Client = Depends(get_supabase),
 ):
     """그룹에서 설비 제거."""
-    # Verify group exists
-    group_resp = (
-        db.table("equipment_groups")
-        .select("id")
-        .eq("id", group_id)
-        .single()
-        .execute()
-    )
-    if not group_resp.data:
-        raise HTTPException(status_code=404, detail="그룹을 찾을 수 없습니다.")
+    fetch_one(db, "equipment_groups", "id", group_id, select="id", label="그룹")
 
     # Remove members (set group_id to null)
     for eq_id in body.equipment_ids:
@@ -282,21 +238,10 @@ def remove_members(
 @router.delete("/{group_id}")
 def delete_group(group_id: str, db: Client = Depends(get_supabase)):
     """설비 그룹 삭제 (멤버의 group_id는 자동으로 null 처리)."""
-    # Verify group exists
-    group_resp = (
-        db.table("equipment_groups")
-        .select("id, name")
-        .eq("id", group_id)
-        .single()
-        .execute()
-    )
-    if not group_resp.data:
-        raise HTTPException(status_code=404, detail="그룹을 찾을 수 없습니다.")
-
-    name = group_resp.data["name"]
+    group = fetch_one(db, "equipment_groups", "id", group_id, select="id, name", label="그룹")
 
     try:
         db.table("equipment_groups").delete().eq("id", group_id).execute()
-        return {"deleted": group_id, "name": name}
+        return {"deleted": group_id, "name": group["name"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"그룹 삭제 실패: {str(e)}")

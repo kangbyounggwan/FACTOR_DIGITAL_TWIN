@@ -7,7 +7,7 @@ from supabase import Client
 from typing import Optional, List
 from uuid import UUID
 
-from app.core.supabase import get_supabase
+from app.core.supabase import get_supabase, fetch_one
 from app.schemas.layout import (
     LayoutCreate,
     LayoutUpdate,
@@ -52,15 +52,7 @@ def create_layout(
 ):
     """Create a new layout with optional equipment positions."""
     # Verify factory exists
-    factory_resp = (
-        db.table("factories")
-        .select("id")
-        .eq("id", str(layout.factory_id))
-        .single()
-        .execute()
-    )
-    if not factory_resp.data:
-        raise HTTPException(status_code=404, detail="Factory not found")
+    fetch_one(db, "factories", "id", str(layout.factory_id), select="id", label="Factory")
 
     # Create layout
     layout_data = {
@@ -251,15 +243,7 @@ def save_layout_from_viewer(
     Called by the editor UI when user clicks "Save Layout".
     """
     # Verify factory exists
-    factory_resp = (
-        db.table("factories")
-        .select("id")
-        .eq("id", str(request.factory_id))
-        .single()
-        .execute()
-    )
-    if not factory_resp.data:
-        raise HTTPException(status_code=404, detail="Factory not found")
+    fetch_one(db, "factories", "id", str(request.factory_id), select="id", label="Factory")
 
     # Create layout
     layout_data = {
@@ -284,7 +268,6 @@ def save_layout_from_viewer(
     if request.equipment:
         # Look up actual UUIDs from scan_codes
         scan_codes = [eq.equipment_id for eq in request.equipment]
-        print(f"[Layout Save] scan_codes from frontend ({len(scan_codes)}): {scan_codes[:5]}...")
 
         eq_lookup_resp = (
             db.table("equipment_scans")
@@ -292,26 +275,14 @@ def save_layout_from_viewer(
             .in_("scan_code", scan_codes)
             .execute()
         )
-        print(f"[Layout Save] DB lookup returned {len(eq_lookup_resp.data)} matches")
-
-        # Also fetch all scan_codes from this factory to compare
-        all_eq_resp = (
-            db.table("equipment_scans")
-            .select("scan_code")
-            .limit(20)
-            .execute()
-        )
-        print(f"[Layout Save] Sample DB scan_codes: {[e['scan_code'] for e in all_eq_resp.data][:5]}...")
 
         scan_to_uuid = {e["scan_code"]: e["id"] for e in eq_lookup_resp.data}
 
         equipment_records = []
-        skipped = []
         for eq in request.equipment:
             equipment_uuid = scan_to_uuid.get(eq.equipment_id)
             if not equipment_uuid:
-                skipped.append(eq.equipment_id)
-                continue  # Skip unknown equipment
+                continue
             equipment_records.append({
                 "layout_id": created_layout["id"],
                 "equipment_id": equipment_uuid,
@@ -325,9 +296,6 @@ def save_layout_from_viewer(
                 "rotation_y": eq.rotation_y,
                 "rotation_z": eq.rotation_z,
             })
-
-        if skipped:
-            print(f"[Layout Save] SKIPPED {len(skipped)} equipment (no UUID match): {skipped[:5]}...")
 
         if equipment_records:
             eq_resp = db.table("layout_equipment").insert(equipment_records).execute()
@@ -349,18 +317,7 @@ def get_layout(
     db: Client = Depends(get_supabase),
 ):
     """Get layout details with all equipment positions."""
-    print(f"[Layout API] get_layout called: {layout_id}")
-
-    layout_resp = (
-        db.table("layouts")
-        .select("*")
-        .eq("id", str(layout_id))
-        .single()
-        .execute()
-    )
-
-    if not layout_resp.data:
-        raise HTTPException(status_code=404, detail="Layout not found")
+    layout = fetch_one(db, "layouts", "id", str(layout_id), label="Layout")
 
     # Get equipment positions
     eq_resp = (
@@ -369,13 +326,11 @@ def get_layout(
         .eq("layout_id", str(layout_id))
         .execute()
     )
-    print(f"[Layout API] layout_equipment rows: {len(eq_resp.data)}")
 
     # Convert UUIDs back to scan_codes for frontend
     equipment_out = []
     if eq_resp.data:
         eq_uuids = [eq["equipment_id"] for eq in eq_resp.data]
-        print(f"[Layout API] equipment UUIDs: {eq_uuids[:3]}...")
 
         scan_lookup_resp = (
             db.table("equipment_scans")
@@ -384,7 +339,6 @@ def get_layout(
             .execute()
         )
         uuid_to_scan = {e["id"]: e["scan_code"] for e in scan_lookup_resp.data}
-        print(f"[Layout API] scan_codes found: {list(uuid_to_scan.values())[:3]}...")
 
         for eq in eq_resp.data:
             scan_code = uuid_to_scan.get(eq["equipment_id"])
@@ -394,10 +348,8 @@ def get_layout(
                     "equipment_id": scan_code,
                 })
 
-    print(f"[Layout API] Returning {len(equipment_out)} equipment, IDs: {[e['equipment_id'] for e in equipment_out[:3]]}...")
-
     return {
-        **layout_resp.data,
+        **layout,
         "equipment": equipment_out,
     }
 
@@ -450,17 +402,7 @@ def delete_layout(
     db: Client = Depends(get_supabase),
 ):
     """Delete a layout and all its equipment positions (CASCADE)."""
-    # Check if layout exists
-    check_resp = (
-        db.table("layouts")
-        .select("id")
-        .eq("id", str(layout_id))
-        .single()
-        .execute()
-    )
-
-    if not check_resp.data:
-        raise HTTPException(status_code=404, detail="Layout not found")
+    fetch_one(db, "layouts", "id", str(layout_id), select="id", label="Layout")
 
     # Delete layout (layout_equipment will cascade)
     db.table("layouts").delete().eq("id", str(layout_id)).execute()
@@ -481,19 +423,7 @@ def activate_layout(
     Set a layout as active for its factory.
     The database trigger automatically deactivates other layouts.
     """
-    # Get layout to find factory_id
-    layout_resp = (
-        db.table("layouts")
-        .select("id, factory_id, is_active")
-        .eq("id", str(layout_id))
-        .single()
-        .execute()
-    )
-
-    if not layout_resp.data:
-        raise HTTPException(status_code=404, detail="Layout not found")
-
-    layout = layout_resp.data
+    layout = fetch_one(db, "layouts", "id", str(layout_id), select="id, factory_id, is_active", label="Layout")
     factory_id = layout["factory_id"]
 
     # Find currently active layouts (before update)
@@ -528,19 +458,7 @@ def clone_layout(
     db: Client = Depends(get_supabase),
 ):
     """Clone an existing layout with a new name."""
-    # Get source layout
-    source_resp = (
-        db.table("layouts")
-        .select("*")
-        .eq("id", str(layout_id))
-        .single()
-        .execute()
-    )
-
-    if not source_resp.data:
-        raise HTTPException(status_code=404, detail="Source layout not found")
-
-    source = source_resp.data
+    source = fetch_one(db, "layouts", "id", str(layout_id), label="Source layout")
 
     # Get source equipment positions
     eq_resp = (
@@ -610,17 +528,7 @@ def update_layout_equipment(
     Replace all equipment positions in a layout.
     Used when saving changes from the editor.
     """
-    # Check layout exists
-    layout_resp = (
-        db.table("layouts")
-        .select("*")
-        .eq("id", str(layout_id))
-        .single()
-        .execute()
-    )
-
-    if not layout_resp.data:
-        raise HTTPException(status_code=404, detail="Layout not found")
+    layout = fetch_one(db, "layouts", "id", str(layout_id), label="Layout")
 
     # Delete existing equipment positions
     db.table("layout_equipment").delete().eq("layout_id", str(layout_id)).execute()
@@ -630,7 +538,6 @@ def update_layout_equipment(
     if equipment:
         # Look up actual UUIDs from scan_codes
         scan_codes = [eq.equipment_id for eq in equipment]
-        print(f"[Layout Equipment Update] scan_codes from frontend ({len(scan_codes)}): {scan_codes[:5]}...")
 
         eq_lookup_resp = (
             db.table("equipment_scans")
@@ -638,21 +545,10 @@ def update_layout_equipment(
             .in_("scan_code", scan_codes)
             .execute()
         )
-        print(f"[Layout Equipment Update] DB lookup returned {len(eq_lookup_resp.data)} matches")
 
         scan_to_uuid = {e["scan_code"]: e["id"] for e in eq_lookup_resp.data}
 
         equipment_records = []
-        skipped = []
-        for eq in equipment:
-            equipment_uuid = scan_to_uuid.get(eq.equipment_id)
-            if not equipment_uuid:
-                skipped.append(eq.equipment_id)
-                continue
-
-        if skipped:
-            print(f"[Layout Equipment Update] SKIPPED {len(skipped)}: {skipped[:5]}...")
-
         for eq in equipment:
             equipment_uuid = scan_to_uuid.get(eq.equipment_id)
             if not equipment_uuid:
@@ -671,16 +567,19 @@ def update_layout_equipment(
                 "rotation_z": eq.rotation_z,
             })
 
-        eq_resp = db.table("layout_equipment").insert(equipment_records).execute()
-        equipment_out = eq_resp.data
+        if equipment_records:
+            eq_resp = db.table("layout_equipment").insert(equipment_records).execute()
+            equipment_out = eq_resp.data
 
     # Update equipment count
     db.table("layouts").update({"equipment_count": len(equipment)}).eq("id", str(layout_id)).execute()
 
     # Return updated layout
-    updated_layout = db.table("layouts").select("*").eq("id", str(layout_id)).single().execute()
+    updated_resp = db.table("layouts").select("*").eq("id", str(layout_id)).execute()
+    if not updated_resp.data:
+        raise HTTPException(status_code=404, detail="Layout not found")
 
     return {
-        **updated_layout.data,
+        **updated_resp.data[0],
         "equipment": equipment_out,
     }
