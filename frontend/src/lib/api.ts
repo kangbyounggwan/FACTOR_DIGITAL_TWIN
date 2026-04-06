@@ -25,13 +25,6 @@ export interface Equipment {
   sub_type?: string | null
 }
 
-export interface SiteStats {
-  total: number
-  verified: number
-  pending: number
-  by_type: Record<string, number>
-}
-
 export interface EquipmentUpdate {
   name?: string
   equipment_type?: string
@@ -48,10 +41,6 @@ export interface EquipmentUpdate {
   size_h?: number
 }
 
-
-// 설비 목록 (라인별)
-export const fetchEquipment = (siteId: string) =>
-  api.get<Equipment[]>(`/equipment/${siteId}`).then(r => r.data)
 
 // 설비 목록 (공장 전체)
 export const fetchFactoryEquipment = (factoryCode: string) =>
@@ -74,11 +63,6 @@ export interface EquipmentBatchUpdate {
 
 export const updateEquipmentBatch = (updates: EquipmentBatchUpdate[]) =>
   api.patch<Equipment[]>('/equipment/batch', updates).then(r => r.data)
-
-// 통계
-export const fetchStats = (siteId: string) =>
-  api.get<SiteStats>(`/equipment/${siteId}/stats/summary`).then(r => r.data)
-
 
 // Point Cloud Data
 export interface PointCloudData {

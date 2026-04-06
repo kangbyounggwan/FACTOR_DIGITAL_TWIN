@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchFactoryEquipment, updateEquipment, fetchEquipmentGroups, fetchFactoryEquipmentGroups, fetchFlowConnections, Equipment, EquipmentUpdate, SiteStats, EquipmentGroup, FlowConnection } from '@/lib/api'
+import { fetchFactoryEquipment, updateEquipment, fetchEquipmentGroups, fetchFactoryEquipmentGroups, fetchFlowConnections, Equipment, EquipmentUpdate, EquipmentGroup, FlowConnection } from '@/lib/api'
 
 // 로컬 목 데이터 (API 연결 전 개발용)
 const MOCK: Equipment[] = [
@@ -36,14 +36,12 @@ export function useFactoryEquipment(factoryCode: string) {
     staleTime: 5 * 60 * 1000, // 5분간 캐시 유지
   })
 
-  // Compute stats from equipment
-  const stats: SiteStats | null = useMemo(() => {
+  const stats = useMemo(() => {
     if (equipment.length === 0) return null
     return {
       total: equipment.length,
       verified: equipment.filter(e => e.verified).length,
       pending: equipment.filter(e => !e.verified).length,
-      by_type: {}
     }
   }, [equipment])
 

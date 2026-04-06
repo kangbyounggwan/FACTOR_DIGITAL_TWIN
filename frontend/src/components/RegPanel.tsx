@@ -110,11 +110,6 @@ export default function RegPanel({ equipment: eq, onSave, onClose, lineName, onU
   // Available types (from API or fallback)
   const availableTypes = equipmentTypes?.map(t => t.code) ?? FALLBACK_TYPES
 
-  // Filtered types based on input
-  const filteredTypes = availableTypes.filter(t =>
-    t.toLowerCase().includes(typeInput.toLowerCase())
-  )
-
   // 설비 변경 시 전체 상태 초기화
   useEffect(() => {
     if (!eq) return

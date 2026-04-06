@@ -50,15 +50,6 @@ export default function LayoutCanvas({
   flowConnections = [],
   commonLineCode,
 }: LayoutCanvasProps) {
-  // 그룹에 속한 설비 ID들 (그룹 박스로 대체되므로 개별 렌더링 제외)
-  const groupedEquipmentIds = useMemo(() => {
-    const ids = new Set<string>()
-    groups.forEach(group => {
-      group.member_ids.forEach(id => ids.add(id))
-    })
-    return ids
-  }, [groups])
-
   // 공용 라인 설비 ID들 (공용 라인에 속하면서 flow connection에 연결된 설비만)
   const commonEquipmentIds = useMemo(() => {
     if (!commonLineCode) return new Set<string>()
